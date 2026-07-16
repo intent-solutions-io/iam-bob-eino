@@ -13,6 +13,7 @@ import (
 
 	"github.com/intent-solutions-io/iam-bob-eino/internal/approval"
 	"github.com/intent-solutions-io/iam-bob-eino/internal/evidence"
+	"github.com/intent-solutions-io/iam-bob-eino/internal/identity"
 	"github.com/intent-solutions-io/iam-bob-eino/internal/policy"
 	"github.com/intent-solutions-io/iam-bob-eino/internal/seams"
 	"github.com/intent-solutions-io/iam-bob-eino/internal/verify"
@@ -30,10 +31,23 @@ type Governor struct {
 	Project  seams.EvidenceProjector
 	Env      string
 	Corr     string // correlation id shared by all actions in one run
+
+	// ID is the structured machine identity stamped into every evidence
+	// record. Constructed once per run through the identity package (the
+	// single creation path); one governor = one running copy = one instance.
+	ID identity.AgentIdentity
 }
 
 // New builds a Governor with sensible defaults for the local, offline slice.
 func New(ws *workspace.Workspace, pol policy.Policy, appr approval.Approver, sink evidence.Sink) *Governor {
+	const env = "local"
+	id, err := identity.New(identity.RoleCoding, env, version.AgentVersion)
+	if err != nil {
+		// The constants in identity/version are validated by tests; a failure
+		// here means the build itself is inconsistent — refuse to run
+		// ungoverned rather than emit evidence with a broken identity.
+		panic("governor: invalid agent identity: " + err.Error())
+	}
 	return &Governor{
 		WS:       ws,
 		Policy:   pol,
@@ -41,8 +55,9 @@ func New(ws *workspace.Workspace, pol policy.Policy, appr approval.Approver, sin
 		Sink:     sink,
 		Exec:     seams.LocalExecution{},
 		Project:  seams.NoopProjector{},
-		Env:      "local",
+		Env:      env,
 		Corr:     newID(),
+		ID:       id,
 	}
 }
 
@@ -78,16 +93,20 @@ type Ticket struct {
 // Begin opens a ticket and seeds the evidence record with identity, engine,
 // policy, and action metadata.
 func (g *Governor) Begin(spec ActionSpec) *Ticket {
+	// Copy the governor-held identity so the record owns its own value; the
+	// pointer must not alias mutable governor state inside the hash chain.
+	agentID := g.ID
 	return &Ticket{
 		g: g,
 		rec: evidence.Record{
 			ActionID:      newID(),
 			CorrelationID: g.Corr,
 			Timestamp:     evidence.Now(),
-			Agent:         evidence.Identity{Name: version.Agent, Version: version.Bob},
+			Agent:         evidence.Identity{Name: version.Agent, Version: version.AgentVersion},
+			AgentIdentity: &agentID,
 			Engine:        version.Engine,
 			EngineVersion: version.EngineVersion,
-			Tool:          evidence.ToolRef{Name: spec.Tool, Version: version.Bob},
+			Tool:          evidence.ToolRef{Name: spec.Tool, Version: version.AgentVersion},
 			Asset:         spec.Asset,
 			Environment:   g.Env,
 			RiskClass:     spec.Risk.String(),
