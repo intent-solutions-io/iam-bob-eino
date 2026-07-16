@@ -65,7 +65,7 @@ func jsonOf(v any) string {
 
 // secretName matches base filenames whose contents are almost always secrets.
 // Reading them would ship the secret to the model provider, so they are refused.
-var secretName = regexp.MustCompile(`(?i)(^\.env$|^\.env\..*|secrets?\..*|^id_(rsa|ed25519|ecdsa|dsa)$|.*\.pem$|.*\.key$|^\.npmrc$|^\.netrc$|^credentials$|keys?\.txt$|age\.key$)`)
+var secretName = regexp.MustCompile(`(?i)(^\.env$|^\.env\..*|^secrets?\..*|^id_(rsa|ed25519|ecdsa|dsa)$|.*\.pem$|.*\.key$|^\.npmrc$|^\.netrc$|^credentials$|^keys?\.txt$|^age\.key$)`)
 
 func isSecretPath(rel string) bool {
 	return secretName.MatchString(filepath.Base(rel))
@@ -101,7 +101,11 @@ func newReadFile(g *governor.Governor) (tool.InvokableTool, error) {
 				t.FinishError(ctx, rerr)
 				return "ERROR: " + rerr.Error(), nil
 			}
-			t.Finish(ctx, "ok", fmt.Sprintf("read %d bytes", len(data)), verify.NA("read observed directly"))
+			info := fmt.Sprintf("read %d bytes", len(data))
+			if truncated {
+				info += " (truncated at cap)"
+			}
+			t.Finish(ctx, "ok", info, verify.NA("read observed directly"))
 			out := evidence.Redact(string(data))
 			if truncated {
 				out += "\n...[truncated]"
@@ -173,7 +177,9 @@ func newSearchCode(g *governor.Governor) (tool.InvokableTool, error) {
 			defer t.EnsureEmitted(ctx)
 			re, cerr := regexp.Compile(in.Pattern)
 			if cerr != nil {
-				t.FinishDenied(ctx, "invalid pattern")
+				// A bad pattern is a tool-argument error, not a governance
+				// denial — classify it as an error so the audit trail is honest.
+				t.FinishError(ctx, fmt.Errorf("invalid pattern"))
 				return "ERROR: invalid regular expression: " + cerr.Error(), nil
 			}
 			if gate := t.Authorize(ctx, spec); !gate.Allowed {
@@ -193,7 +199,11 @@ func newSearchCode(g *governor.Governor) (tool.InvokableTool, error) {
 			if len(matches) == 0 {
 				return "(no matches)", nil
 			}
-			return evidence.Redact(strings.Join(matches, "\n")), nil
+			result := evidence.Redact(strings.Join(matches, "\n"))
+			if len(matches) >= maxSearchResults {
+				result += fmt.Sprintf("\n...[truncated at %d matches — narrow the pattern or scope]", maxSearchResults)
+			}
+			return result, nil
 		})
 }
 

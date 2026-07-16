@@ -169,6 +169,21 @@ func TestRunCommandRejectsShellInjection(t *testing.T) {
 	}
 }
 
+func TestRunCommandFailingVerifiesMismatch(t *testing.T) {
+	root := t.TempDir() // not a git repo → `git status` exits non-zero
+	g, sink := newGov(t, root, false, approval.AutoApprove{})
+	out := invoke(t, newRunCommand, g, `{"command":"git status"}`)
+	if !strings.Contains(out, "exit_code=") {
+		t.Fatalf("run = %q, want an exit code", out)
+	}
+	rec := lastRecord(t, sink)
+	// The command ran (execution ok) but its outcome is not the success we
+	// verify for — evidence must record the mismatch, not a false "verified".
+	if rec.Execution != "ok" || rec.Verified != "mismatch" {
+		t.Fatalf("evidence = %+v, want execution ok / verified mismatch", rec)
+	}
+}
+
 func TestSearchCode(t *testing.T) {
 	root := t.TempDir()
 	os.WriteFile(filepath.Join(root, "a.go"), []byte("package a\n// find_this_needle here\n"), 0o644)

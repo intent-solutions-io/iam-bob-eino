@@ -124,7 +124,9 @@ func (t *Ticket) Authorize(ctx context.Context, spec ActionSpec) Gate {
 		}
 		t.rec.ApprovalID = ad.ApprovalID
 	}
-	// Route world-changing actions through the AGP-compatible execution seam.
+	// Route the action through the AGP-compatible execution seam. Every
+	// authorized action passes through here (not just writes) so the governor
+	// remains the single control point; the local default is a no-op.
 	if err := t.g.Exec.Mediate(ctx, seams.ExecutionRequest{
 		ActionID:  t.rec.ActionID,
 		Tool:      spec.Tool,

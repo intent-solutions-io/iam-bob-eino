@@ -63,7 +63,12 @@ func Run(ctx context.Context, ag *adk.ChatModelAgent, task string, trace io.Writ
 		if out == nil || out.MessageOutput == nil {
 			continue
 		}
-		msg := out.MessageOutput.Message
+		// GetMessage concatenates the stream when streaming is enabled, so this
+		// stays correct if EnableStreaming is turned on later.
+		msg, gerr := out.MessageOutput.GetMessage()
+		if gerr != nil {
+			return final.String(), fmt.Errorf("agent event: %w", gerr)
+		}
 		if msg == nil {
 			continue
 		}
