@@ -395,19 +395,41 @@ func neutralizedEnv() []string {
 }
 
 // dangerousFlags are argument tokens that let an allowlisted program run
-// arbitrary code via configuration (e.g. git -c core.pager=...).
+// arbitrary code via configuration or a spawned helper (e.g. git -c
+// core.pager=..., git --exec-path=/evil, go test -exec /evil, go build
+// -toolexec /evil). The match is on the flag NAME only, so both the separate
+// form ("--config" "x") and the equals form ("--config=x") are caught.
 var dangerousFlags = map[string]bool{
+	// git config / helper-path / receive-pack vectors
 	"-c": true, "--config": true, "-C": true, "--exec-path": true,
 	"--upload-pack": true, "--receive-pack": true, "-o": true,
+	"--config-env": true, "--work-tree": true, "--git-dir": true,
+	// go toolchain program-spawning flags
+	"-exec": true, "-toolexec": true, "-ldflags": true, "-gcflags": true,
+	"-asmflags": true, "-overlay": true,
 }
 
 func checkDangerousFlags(argv []string) error {
 	for _, a := range argv[1:] {
-		if dangerousFlags[a] {
+		// Normalize the equals form ("--flag=value") to the flag name so the
+		// value cannot smuggle a dangerous flag past an exact-token check.
+		name := a
+		if i := strings.IndexByte(a, '='); i >= 0 {
+			name = a[:i]
+		}
+		if dangerousFlags[name] {
 			return fmt.Errorf("argument %q is not allowed (arbitrary-exec vector)", a)
 		}
 	}
 	return nil
+}
+
+// isDotGitPath reports whether a workspace-relative path targets the .git
+// directory. Writing into .git (hooks, config) is an execution/tamper vector,
+// so writes and patches refuse it even when writes are enabled.
+func isDotGitPath(rel string) bool {
+	clean := filepath.ToSlash(filepath.Clean(rel))
+	return clean == ".git" || strings.HasPrefix(clean, ".git/")
 }
 
 // shellMeta is the set of shell control characters rejected before execution.
@@ -458,6 +480,10 @@ func newWriteFile(g *governor.Governor) (tool.InvokableTool, error) {
 			if isSecretPath(in.Path) {
 				t.FinishDenied(ctx, "refused: looks like a secret file")
 				return "DENIED: refusing to write a likely secret file", nil
+			}
+			if isDotGitPath(in.Path) {
+				t.FinishDenied(ctx, "refused: writing into .git is not allowed")
+				return "DENIED: refusing to write into the .git directory", nil
 			}
 			if len(in.Content) > maxWriteBytes {
 				t.FinishDenied(ctx, "content exceeds size limit")

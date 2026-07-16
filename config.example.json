@@ -1,0 +1,14 @@
+{
+  "_comment": "Bob (Intent Agent Model) example config. Copy to $XDG_CONFIG_HOME/iam-bob-eino/config.json or ~/.config/iam-bob-eino/config.json, or pass with --config. PLACEHOLDERS ONLY below. API KEYS NEVER GO IN THIS FILE — keys are environment-only (e.g. OPENAI_API_KEY, DEEPSEEK_API_KEY, MINIMAX_API_KEY); the loader hard-fails on any unknown key, including api_key. Precedence: CLI flags > BOB_* env > provider env (MINIMAX_BASE_URL/MINIMAX_MODEL) > this file > defaults.",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "base_url": "https://api.example.com/v1",
+  "workspace": "/path/to/your/workspace",
+  "max_steps": 32,
+  "timeout": "2m",
+  "allow_writes": false,
+  "allow_exec": false,
+  "approval_mode": "prompt",
+  "evidence_dir": "/path/outside/the/workspace/evidence",
+  "output_format": "text"
+}
