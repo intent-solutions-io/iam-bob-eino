@@ -6,12 +6,14 @@
 The 49 handoff items:
 
 1. **Starting main SHA:** `7a54ff323b56879104729778b94bb3b21c3dc519`
-2. **Ending branch SHA:** _updated at PR open — see PR head_
-3. **Ending main SHA when merged:** _pending merge_
-4. **PR number:** _pending — filled at PR open_
-5. **CI result:** _pending — gofmt/vet/build/test -race/coverage/govulncheck must pass_
-6. **Review findings:** _pending AI review lanes_
-7. **Review-thread status:** _pending_
+2. **Ending branch SHA:** `50c38a7460457b80c4f6657beee2314868af580f` (+ this handoff-completion
+   commit — see the PR head for the final value)
+3. **Ending main SHA when merged:** _pending merge — see PR #2 merge commit_
+4. **PR number:** [intent-solutions-io/iam-bob-eino#2](https://github.com/intent-solutions-io/iam-bob-eino/pull/2)
+5. **CI result:** _pending on PR #2 — gofmt/vet/build/test -race/coverage/govulncheck; the PR
+   checks page is the authoritative record_
+6. **Review findings:** _pending AI review lanes on PR #2_
+7. **Review-thread status:** _pending — see PR #2 threads_
 8. **Repositories inspected:** `iam-bob-eino` (edited); audit references (read-only, from the
    prior audit): `iam-bob-pydantic`, `iam-bob-adk-python`, `iam-bob-langgraph`,
    `iam-bob-intendant`, `bobs-big-brain-umbrella`. **No sibling repo modified.**
