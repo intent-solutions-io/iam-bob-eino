@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Go 1.24+ (developed on 1.26).
+- Go 1.25+ (developed on 1.26).
 - No network is required for the test suite; it uses a fake model.
 
 ## Build, test, run

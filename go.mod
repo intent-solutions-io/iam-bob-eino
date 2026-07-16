@@ -1,6 +1,6 @@
 module github.com/intent-solutions-io/iam-bob-eino
 
-go 1.26.5
+go 1.25
 
 require (
 	github.com/cloudwego/eino v0.9.12
