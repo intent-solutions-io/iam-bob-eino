@@ -5,7 +5,7 @@ GO      ?= go
 BIN     ?= bob
 PKG     := ./...
 
-.PHONY: all build test vet fmt fmtcheck tidy lint run-local ci clean
+.PHONY: all build test test-race vet fmt fmtcheck tidy lint hooks run-local ci clean
 
 all: build
 
@@ -32,6 +32,12 @@ tidy: ## Tidy go.mod/go.sum
 
 lint: ## golangci-lint if installed, else vet
 	@if command -v golangci-lint >/dev/null 2>&1; then golangci-lint run $(PKG); else echo "golangci-lint not installed; running go vet"; $(GO) vet $(PKG); fi
+
+hooks: ## Install the repo git hooks (L1 enforcement)
+	@mkdir -p .git/hooks
+	@cp scripts/hooks/pre-commit .git/hooks/pre-commit
+	@chmod +x .git/hooks/pre-commit
+	@echo "installed .git/hooks/pre-commit"
 
 # run-local: BYOK, zero GCP. Set a non-Google provider key first, e.g.
 #   export DEEPSEEK_API_KEY=...   (or OPENAI_API_KEY / GROQ_API_KEY / ZHIPU_API_KEY)
