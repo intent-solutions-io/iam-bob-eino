@@ -8,14 +8,23 @@
 //
 // Precedence (highest wins):
 //
-//	explicit CLI values > BOB_* env > provider-specific env
+//	explicit CLI values > INTENT_BOB_EINO_* env > BOB_* env (legacy, warned
+//	once per variable; values never printed) > provider-specific env
 //	(MINIMAX_BASE_URL / MINIMAX_MODEL, applied only when the effective
 //	provider is "minimax") > config file > safe defaults.
 //
+// The canonical env namespace is INTENT_BOB_EINO_* — derived from the
+// component id in the identity contract (intent-bob-eino; see
+// 000-docs/005-DR-STND-bob-eino-identity-contract.md). The legacy BOB_*
+// namespace collides with iam-bob-pydantic and is kept only as a warned
+// compatibility alias; for any variable, the canonical name wins.
+//
 // Config file lookup precedence:
 //
-//	--config path arg > $BOB_CONFIG > $XDG_CONFIG_HOME/iam-bob-eino/config.json
-//	> ~/.config/iam-bob-eino/config.json > none (defaults only).
+//	--config path arg > $INTENT_BOB_EINO_CONFIG > $BOB_CONFIG (legacy, warned)
+//	> <base>/intent-solutions/agents/bob/eino-go/config.json (canonical)
+//	> <base>/iam-bob-eino/config.json (legacy location, warned)
+//	for each base in ($XDG_CONFIG_HOME, ~/.config) > none (defaults only).
 //
 // SECURITY: API keys are NEVER read from, or written to, the config file.
 // Keys stay env-only (e.g. OPENAI_API_KEY, MINIMAX_API_KEY) and are resolved
@@ -29,6 +38,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -36,6 +46,58 @@ import (
 	"strings"
 	"time"
 )
+
+// Environment namespaces. EnvPrefix is the canonical namespace, derived from
+// the identity contract's component id (intent-bob-eino → INTENT_BOB_EINO_);
+// a test asserts the derivation so the prefix can never drift from
+// internal/identity.ComponentID. LegacyEnvPrefix is the pre-contract BOB_*
+// namespace, kept as a warned compatibility alias only.
+const (
+	EnvPrefix       = "INTENT_BOB_EINO_"
+	LegacyEnvPrefix = "BOB_"
+)
+
+// envNames lists the logical variable names of the full 12-var namespace.
+// Each exists in both the canonical (INTENT_BOB_EINO_<NAME>) and legacy
+// (BOB_<NAME>) form; the canonical form always wins.
+var envNames = []string{
+	"CONFIG", "PROVIDER", "MODEL", "BASE_URL", "WORKSPACE", "MAX_STEPS",
+	"TIMEOUT", "ALLOW_WRITES", "ALLOW_EXEC", "APPROVAL_MODE", "EVIDENCE_DIR",
+	"OUTPUT_FORMAT",
+}
+
+// envReader resolves one logical variable against both namespaces. Reading a
+// value from the legacy namespace emits a once-per-variable deprecation
+// warning that names both variables but NEVER prints the value.
+type envReader struct {
+	getenv func(string) string
+	warn   io.Writer
+	warned map[string]bool
+}
+
+func newEnvReader(getenv func(string) string, warn io.Writer) *envReader {
+	if warn == nil {
+		warn = os.Stderr
+	}
+	return &envReader{getenv: getenv, warn: warn, warned: map[string]bool{}}
+}
+
+// get returns the effective value for the logical variable name plus the
+// concrete environment variable it came from (for error attribution).
+func (e *envReader) get(name string) (value, sourceVar string) {
+	if v := e.getenv(EnvPrefix + name); v != "" {
+		return v, EnvPrefix + name
+	}
+	if v := e.getenv(LegacyEnvPrefix + name); v != "" {
+		if !e.warned[name] {
+			e.warned[name] = true
+			fmt.Fprintf(e.warn, "warning: %s is deprecated; use %s\n",
+				LegacyEnvPrefix+name, EnvPrefix+name)
+		}
+		return v, LegacyEnvPrefix + name
+	}
+	return "", ""
+}
 
 // Typed sentinel errors. Every validation failure wraps exactly one of these,
 // so callers can errors.Is-dispatch without string matching.
@@ -68,9 +130,10 @@ var (
 	// {"text", "json"}.
 	ErrInvalidOutputFormat = errors.New(`output format must be "text" or "json"`)
 	// ErrConfigFile is returned when an explicitly requested config file
-	// (--config or $BOB_CONFIG) cannot be read or parsed.
+	// (--config, INTENT_BOB_EINO_CONFIG, or legacy BOB_CONFIG) cannot be
+	// read or parsed.
 	ErrConfigFile = errors.New("config file error")
-	// ErrInvalidEnv is returned when a BOB_* environment variable holds an
+	// ErrInvalidEnv is returned when an INTENT_BOB_EINO_* (or legacy BOB_*) environment variable holds an
 	// unparseable value.
 	ErrInvalidEnv = errors.New("invalid environment value")
 )
@@ -150,6 +213,9 @@ type Options struct {
 	// HomeDir overrides the user home for the ~/.config lookup tier; empty
 	// means os.UserHomeDir.
 	HomeDir string
+	// Warn receives legacy-namespace deprecation warnings (never values);
+	// nil means os.Stderr. Tests inject a buffer.
+	Warn io.Writer
 }
 
 // fileConfig mirrors the JSON config file. Pointer fields distinguish
@@ -180,6 +246,7 @@ func Load(opts Options) (Config, error) {
 	if getenv == nil {
 		getenv = os.Getenv
 	}
+	env := newEnvReader(getenv, opts.Warn)
 
 	cfg := Config{
 		MaxSteps:     DefaultMaxSteps,
@@ -190,7 +257,7 @@ func Load(opts Options) (Config, error) {
 	}
 
 	// Tier: config file.
-	path, explicit, err := resolveConfigPath(opts, getenv)
+	path, explicit, err := resolveConfigPath(opts, env)
 	if err != nil {
 		return Config{}, err
 	}
@@ -201,10 +268,11 @@ func Load(opts Options) (Config, error) {
 	}
 
 	// Tier: provider-specific env. Applied only when the EFFECTIVE provider
-	// (considering the higher-precedence CLI and BOB_PROVIDER tiers too) is
-	// minimax, so MINIMAX_* left over in an environment cannot leak into a
-	// run against a different provider.
-	if effectiveProvider(cfg, opts.CLI, getenv) == "minimax" {
+	// (considering the higher-precedence CLI and env tiers too) is minimax,
+	// so MINIMAX_* left over in an environment cannot leak into a run
+	// against a different provider. MINIMAX_* is provider-native, not part
+	// of the INTENT_BOB_EINO_* namespace, and is not deprecation-warned.
+	if effectiveProvider(cfg, opts.CLI, env) == "minimax" {
 		if v := getenv("MINIMAX_BASE_URL"); v != "" {
 			cfg.BaseURL = v
 		}
@@ -213,8 +281,8 @@ func Load(opts Options) (Config, error) {
 		}
 	}
 
-	// Tier: BOB_* env.
-	if err := applyEnv(&cfg, getenv); err != nil {
+	// Tier: INTENT_BOB_EINO_* env (canonical), with BOB_* legacy fallback.
+	if err := applyEnv(&cfg, env); err != nil {
 		return Config{}, err
 	}
 
@@ -227,24 +295,33 @@ func Load(opts Options) (Config, error) {
 	return cfg, nil
 }
 
+// Config-file directory fragments under each base dir. The canonical
+// location follows the identity contract's state-path convention
+// (org/agents/persona/runtime); the legacy pre-contract location is still
+// discovered, with a once-per-load warning.
+const (
+	canonicalConfigDir = "intent-solutions/agents/bob/eino-go"
+	legacyConfigDir    = "iam-bob-eino"
+)
+
 // resolveConfigPath walks the file lookup precedence. It returns the chosen
 // path (empty = none), whether the path was explicitly requested (explicit
 // paths must exist), and an error only for an explicit path that is missing.
-func resolveConfigPath(opts Options, getenv func(string) string) (path string, explicit bool, err error) {
+func resolveConfigPath(opts Options, env *envReader) (path string, explicit bool, err error) {
 	if opts.ConfigPath != "" {
 		if _, statErr := os.Stat(opts.ConfigPath); statErr != nil {
 			return "", true, fieldErr("--config", ErrConfigFile, statErr.Error())
 		}
 		return opts.ConfigPath, true, nil
 	}
-	if p := getenv("BOB_CONFIG"); p != "" {
+	if p, source := env.get("CONFIG"); p != "" {
 		if _, statErr := os.Stat(p); statErr != nil {
-			return "", true, fieldErr("BOB_CONFIG", ErrConfigFile, statErr.Error())
+			return "", true, fieldErr(source, ErrConfigFile, statErr.Error())
 		}
 		return p, true, nil
 	}
 	var dirs []string
-	if xdg := getenv("XDG_CONFIG_HOME"); xdg != "" {
+	if xdg := env.getenv("XDG_CONFIG_HOME"); xdg != "" {
 		dirs = append(dirs, xdg)
 	}
 	home := opts.HomeDir
@@ -255,8 +332,16 @@ func resolveConfigPath(opts Options, getenv func(string) string) (path string, e
 		dirs = append(dirs, filepath.Join(home, ".config"))
 	}
 	for _, dir := range dirs {
-		candidate := filepath.Join(dir, "iam-bob-eino", "config.json")
+		candidate := filepath.Join(dir, filepath.FromSlash(canonicalConfigDir), "config.json")
 		if _, statErr := os.Stat(candidate); statErr == nil {
+			return candidate, false, nil
+		}
+	}
+	for _, dir := range dirs {
+		candidate := filepath.Join(dir, legacyConfigDir, "config.json")
+		if _, statErr := os.Stat(candidate); statErr == nil {
+			fmt.Fprintf(env.warn, "warning: config found at legacy location %s; move it to %s\n",
+				candidate, filepath.Join(dir, filepath.FromSlash(canonicalConfigDir), "config.json"))
 			return candidate, false, nil
 		}
 	}
@@ -339,53 +424,58 @@ func unknownFieldName(err error) (string, bool) {
 	return name, true
 }
 
-// applyEnv folds the BOB_* environment tier into cfg.
-func applyEnv(cfg *Config, getenv func(string) string) error {
-	if v := getenv("BOB_PROVIDER"); v != "" {
+// applyEnv folds the environment tier into cfg: for each logical variable
+// the canonical INTENT_BOB_EINO_<NAME> wins, with BOB_<NAME> honored as a
+// warned legacy fallback (see envReader).
+func applyEnv(cfg *Config, env *envReader) error {
+	if v, _ := env.get("PROVIDER"); v != "" {
 		cfg.Provider = v
 	}
-	if v := getenv("BOB_MODEL"); v != "" {
+	if v, _ := env.get("MODEL"); v != "" {
 		cfg.Model = v
 	}
-	if v := getenv("BOB_BASE_URL"); v != "" {
+	if v, _ := env.get("BASE_URL"); v != "" {
 		cfg.BaseURL = v
 	}
-	if v := getenv("BOB_WORKSPACE"); v != "" {
+	if v, _ := env.get("WORKSPACE"); v != "" {
 		cfg.Workspace = v
 	}
-	if v := getenv("BOB_MAX_STEPS"); v != "" {
+	if v, source := env.get("MAX_STEPS"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil {
-			return fieldErr("BOB_MAX_STEPS", ErrInvalidEnv, "not an integer")
+			return fieldErr(source, ErrInvalidEnv, "not an integer")
 		}
 		cfg.MaxSteps = n
 	}
-	if v := getenv("BOB_TIMEOUT"); v != "" {
+	if v, source := env.get("TIMEOUT"); v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
-			return fieldErr("BOB_TIMEOUT", ErrInvalidDuration, v)
+			return fieldErr(source, ErrInvalidDuration, v)
 		}
 		cfg.Timeout = d
 	}
-	if v := getenv("BOB_ALLOW_WRITES"); v != "" {
+	if v, source := env.get("ALLOW_WRITES"); v != "" {
 		b, err := strconv.ParseBool(v)
 		if err != nil {
-			return fieldErr("BOB_ALLOW_WRITES", ErrInvalidEnv, "not a boolean")
+			return fieldErr(source, ErrInvalidEnv, "not a boolean")
 		}
 		cfg.AllowWrites = b
 	}
-	if v := getenv("BOB_ALLOW_EXEC"); v != "" {
+	if v, source := env.get("ALLOW_EXEC"); v != "" {
 		b, err := strconv.ParseBool(v)
 		if err != nil {
-			return fieldErr("BOB_ALLOW_EXEC", ErrInvalidEnv, "not a boolean")
+			return fieldErr(source, ErrInvalidEnv, "not a boolean")
 		}
 		cfg.AllowExec = b
 	}
-	if v := getenv("BOB_APPROVAL_MODE"); v != "" {
+	if v, _ := env.get("APPROVAL_MODE"); v != "" {
 		cfg.ApprovalMode = v
 	}
-	if v := getenv("BOB_EVIDENCE_DIR"); v != "" {
+	if v, _ := env.get("EVIDENCE_DIR"); v != "" {
 		cfg.EvidenceDir = v
+	}
+	if v, _ := env.get("OUTPUT_FORMAT"); v != "" {
+		cfg.OutputFormat = v
 	}
 	return nil
 }
@@ -428,12 +518,14 @@ func applyOverrides(cfg *Config, o Overrides) {
 }
 
 // effectiveProvider answers "which provider will this run actually use?"
-// so the provider-specific env tier only fires for its own provider.
-func effectiveProvider(fileMerged Config, cli Overrides, getenv func(string) string) string {
+// so the provider-specific env tier only fires for its own provider. It
+// shares the envReader with applyEnv, so the legacy warning for PROVIDER
+// still fires at most once per Load.
+func effectiveProvider(fileMerged Config, cli Overrides, env *envReader) string {
 	if cli.Provider != nil {
 		return strings.ToLower(*cli.Provider)
 	}
-	if v := getenv("BOB_PROVIDER"); v != "" {
+	if v, _ := env.get("PROVIDER"); v != "" {
 		return strings.ToLower(v)
 	}
 	return strings.ToLower(fileMerged.Provider)
