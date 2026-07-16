@@ -91,4 +91,6 @@ See [`SECURITY.md`](SECURITY.md) for the threat model and residual risks, and
 
 ## License
 
-Intent Solutions Proprietary. See [`LICENSE`](LICENSE).
+Apache-2.0. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE). Bob builds on
+CloudWeGo Eino and eino-ext (both Apache-2.0); matching that license keeps the
+runtime consistent with the SDK/ADK it depends on.

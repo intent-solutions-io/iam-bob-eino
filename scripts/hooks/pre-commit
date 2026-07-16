@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# iam-bob-eino pre-commit hook (L1). Install with: make hooks
+# Enforcement travels with the code — this hook lives in the repo, not in ~/.claude.
+set -euo pipefail
+
+echo "pre-commit: gofmt…"
+unformatted=$(gofmt -l .)
+if [ -n "$unformatted" ]; then
+  echo "gofmt: the following files are not formatted:" >&2
+  echo "$unformatted" >&2
+  echo "run: gofmt -w ." >&2
+  exit 1
+fi
+
+echo "pre-commit: go vet…"
+go vet ./...
+
+echo "pre-commit: go build…"
+go build ./...
+
+echo "pre-commit: go test…"
+go test ./...
+
+echo "pre-commit: OK"
