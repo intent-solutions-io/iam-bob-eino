@@ -17,6 +17,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/intent-solutions-io/iam-bob-eino/internal/evidence"
+	"github.com/intent-solutions-io/iam-bob-eino/internal/version"
 )
 
 // Config parameterizes agent construction.
@@ -33,7 +34,9 @@ func New(ctx context.Context, cfg Config) (*adk.ChatModelAgent, error) {
 		cfg.MaxIterations = 16
 	}
 	return adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
-		Name:        "bob",
+		// The agent's machine name is the canonical component id, never the
+		// bare persona — "Bob" stays human-facing prose in persona.go.
+		Name:        version.Component,
 		Description: "A governed local software-engineering agent (Intent Agent Model).",
 		Instruction: Persona,
 		Model:       cfg.Model,

@@ -9,7 +9,14 @@ Model (IAM)** — "Bob" (IAM = Intent Agent Model, *not* Identity and Access
 Management). This slice is a **governed local coding agent**: Eino supplies the
 agent loop; Bob supplies persona, governed tools, and the policy / approval /
 verification / evidence boundaries. See `README.md`, `SECURITY.md`, and
-`000-docs/001-AT-DECR-eino-runtime-decision.md`.
+`000-docs/001-AT-DECR-eino-runtime-decision.md`. (`AGENTS.md` is the tool-neutral
+sibling of this file.)
+
+**Naming:** Bob = persona (human-facing only) · `intent-agent-model/bob` = agent ·
+`eino-go` = runtime · `iam-bob-eino` = implementation · `intent-bob-eino` = component.
+Canonical binary `bob-eino` (`bob` = deprecated tested alias); canonical env
+`INTENT_BOB_EINO_*` (`BOB_*` legacy, warned). Contract:
+`000-docs/005-DR-STND-bob-eino-identity-contract.md`.
 
 ## Golden rules
 
@@ -27,22 +34,32 @@ verification / evidence boundaries. See `README.md`, `SECURITY.md`, and
    the workspace and is hash-chained.
 5. **Tests are real and ship with the change**; security behavior ships with a
    regression test. Don't lower a threshold to go green.
+6. **Identity has one creation path.** All identity strings come from
+   `internal/identity` (`identity.New`) and `internal/version` constants — never
+   bare `"bob"` as a machine key (binary/service/env/telemetry/agent name), and
+   never restate the id values as literals. Never write the phrase "fake model"
+   (say "deterministic Eino model fixture" / "offline model stub").
 
 ## Build & test
 
 ```bash
 make ci            # fmtcheck + vet + test  (the gate)
+make build         # canonical bob-eino binary
+make build-legacy  # legacy `bob` alias (same internal/cli)
 make run-local TASK='...'   # BYOK: set DEEPSEEK_API_KEY / OPENAI_API_KEY / ...
 ```
 
-The test suite needs no network (fake model in `internal/provider/fake.go`).
+The test suite needs no network (offline model stub in `internal/provider/fake.go`).
 
 ## Package map
 
-`cmd/bob` CLI · `internal/agent` (Eino wiring + persona) · `internal/provider`
-(BYOK model + fake) · `internal/governor` (control point) · `internal/policy`
-(R0–R4) · `internal/approval` · `internal/tools` (governed tools) ·
-`internal/verify` · `internal/evidence` (MC-projectable, hash-chained) ·
+`cmd/bob-eino` canonical CLI + `cmd/bob` legacy alias (both thin wrappers) ·
+`internal/cli` (the single CLI implementation + state paths) · `internal/identity`
+(structured machine identity — single creation path) · `internal/agent` (Eino
+wiring + persona) · `internal/provider` (BYOK model + offline stub) ·
+`internal/governor` (control point) · `internal/policy` (R0–R4) ·
+`internal/approval` · `internal/tools` (governed tools) · `internal/verify` ·
+`internal/evidence` (MC-projectable, hash-chained, carries `agent_identity`) ·
 `internal/workspace` (os.Root confinement) · `internal/seams` (BigBrain / AGP /
 Mission Control interfaces).
 

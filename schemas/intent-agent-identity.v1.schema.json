@@ -1,0 +1,93 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://intentsolutions.io/schemas/intent-agent-identity.v1.schema.json",
+  "title": "Intent Agent Identity v1",
+  "description": "Structured machine identity for Intent Agent Model runtimes. Separates the human-facing persona (bob) from machine keys so binaries, env namespaces, services, telemetry, and state paths never collide across runtimes. Naming contract only — NOT an identity-management or auth system.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "family_id",
+    "persona_id",
+    "agent_id",
+    "runtime_id",
+    "implementation_id",
+    "component_id",
+    "role_id",
+    "instance_id",
+    "version"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "intent-agent-identity/v1",
+      "description": "Identity contract version. Unknown versions must be rejected."
+    },
+    "family_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "Model/design family, e.g. intent-agent-model."
+    },
+    "persona_id": {
+      "type": "string",
+      "const": "bob",
+      "description": "Shared human-facing persona. Never used alone as a machine key."
+    },
+    "agent_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(/[a-z0-9]+(-[a-z0-9]+)*)+$",
+      "description": "Stable across compatible runtimes: family_id/persona_id."
+    },
+    "runtime_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "Implementation technology, e.g. eino-go."
+    },
+    "implementation_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "Codebase/repository, e.g. iam-bob-eino."
+    },
+    "component_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "not": { "const": "bob" },
+      "description": "Canonical operational component (binary/service/telemetry/state), e.g. intent-bob-eino. Must never be the bare persona."
+    },
+    "role_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "What this run does, e.g. coding. Separate from persona."
+    },
+    "instance_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*:[a-z0-9]+(-[a-z0-9]+)*:[a-z0-9]+$",
+      "description": "One running copy: component_id:env:opaque. The opaque suffix must not be parsed for meaning."
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^run-[a-z0-9]+$",
+      "description": "Per-operation unique id. Optional; must differ from instance_id."
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Application semantic version of the implementation."
+    }
+  },
+  "examples": [
+    {
+      "schema_version": "intent-agent-identity/v1",
+      "family_id": "intent-agent-model",
+      "persona_id": "bob",
+      "agent_id": "intent-agent-model/bob",
+      "runtime_id": "eino-go",
+      "implementation_id": "iam-bob-eino",
+      "component_id": "intent-bob-eino",
+      "role_id": "coding",
+      "instance_id": "intent-bob-eino:local:01hxyzk3f2m9q8w7v6t5r4e3d2",
+      "run_id": "run-01hxyzk3f2m9q8w7v6t5r4e3d3",
+      "version": "0.1.0"
+    }
+  ]
+}

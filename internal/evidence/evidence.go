@@ -18,6 +18,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/intent-solutions-io/iam-bob-eino/internal/identity"
 )
 
 // Identity names the acting agent for the evidence record.
@@ -39,22 +41,32 @@ type Record struct {
 	CorrelationID string   `json:"correlation_id"`
 	Timestamp     string   `json:"timestamp"`
 	Agent         Identity `json:"agent"`
-	Engine        string   `json:"engine"`
-	EngineVersion string   `json:"engine_version"`
-	Tool          ToolRef  `json:"tool"`
-	Asset         string   `json:"asset"` // workspace-relative path or command name
-	Environment   string   `json:"environment"`
-	RiskClass     string   `json:"risk_class"`
-	PolicyVersion string   `json:"policy_version"`
-	PolicyHash    string   `json:"policy_hash"`
-	Authorization string   `json:"authorization"` // allowed | denied
-	ApprovalID    string   `json:"approval_id,omitempty"`
-	ArgsHash      string   `json:"args_hash"` // sha256 of raw args, content-safe
-	Execution     string   `json:"execution"` // ok | error | denied | skipped
-	ExecutionInfo string   `json:"execution_info,omitempty"`
-	Verified      string   `json:"verified"` // verified | mismatch | unverified | n/a
-	VerifyInfo    string   `json:"verify_info,omitempty"`
-	Error         string   `json:"error,omitempty"`
+
+	// AgentIdentity is the structured machine identity (evidence schema v2,
+	// version.EvidenceSchemaVersion). A pointer so legacy v1 records — which
+	// lack the field — still parse and self-verify: an absent field stays nil
+	// and json.Marshal omits it, reproducing the exact v1 byte shape the
+	// original chain hashed. It sits inside json.Marshal, so chain() and
+	// VerifyChain bind it automatically — tampering the identity breaks the
+	// hash chain.
+	AgentIdentity *identity.AgentIdentity `json:"agent_identity,omitempty"`
+
+	Engine        string  `json:"engine"`
+	EngineVersion string  `json:"engine_version"`
+	Tool          ToolRef `json:"tool"`
+	Asset         string  `json:"asset"` // workspace-relative path or command name
+	Environment   string  `json:"environment"`
+	RiskClass     string  `json:"risk_class"`
+	PolicyVersion string  `json:"policy_version"`
+	PolicyHash    string  `json:"policy_hash"`
+	Authorization string  `json:"authorization"` // allowed | denied
+	ApprovalID    string  `json:"approval_id,omitempty"`
+	ArgsHash      string  `json:"args_hash"` // sha256 of raw args, content-safe
+	Execution     string  `json:"execution"` // ok | error | denied | skipped
+	ExecutionInfo string  `json:"execution_info,omitempty"`
+	Verified      string  `json:"verified"` // verified | mismatch | unverified | n/a
+	VerifyInfo    string  `json:"verify_info,omitempty"`
+	Error         string  `json:"error,omitempty"`
 
 	// PrevHash and RecordHash form a tamper-evident chain: RecordHash is the
 	// sha256 of this record's content plus PrevHash. Deleting or editing a

@@ -21,7 +21,7 @@ import (
 )
 
 // TestAgentRunsGovernedToolThroughEino drives the full stack with no network:
-// a scripted fake model calls read_file, Eino's ADK runs the governed tool, and
+// a scripted offline model fixture calls read_file, Eino's ADK runs the governed tool, and
 // the final answer plus an evidence record prove the vertical slice works.
 func TestAgentRunsGovernedToolThroughEino(t *testing.T) {
 	root := t.TempDir()
