@@ -1,16 +1,23 @@
 # iam-bob-eino — build + quality gates
 # Enforcement travels with the code: these targets are what CI runs.
+#
+# Canonical binary: bob-eino (component intent-bob-eino). The bare `bob` name
+# collides on PATH with iam-bob-intendant; build it only as the legacy alias.
 
-GO      ?= go
-BIN     ?= bob
-PKG     := ./...
+GO         ?= go
+BIN        ?= bob-eino
+LEGACY_BIN ?= bob
+PKG        := ./...
 
-.PHONY: all build test test-race vet fmt fmtcheck tidy lint hooks run-local ci clean
+.PHONY: all build build-legacy test test-race vet fmt fmtcheck tidy lint hooks run-local ci clean
 
 all: build
 
-build: ## Compile the bob binary
-	$(GO) build -o $(BIN) ./cmd/bob
+build: ## Compile the canonical bob-eino binary
+	$(GO) build -o $(BIN) ./cmd/bob-eino
+
+build-legacy: ## Compile the legacy `bob` compatibility alias (same internal/cli)
+	$(GO) build -o $(LEGACY_BIN) ./cmd/bob
 
 test: ## Run the full test suite
 	$(GO) test $(PKG)
@@ -49,5 +56,5 @@ run-local: build ## Run Bob against this repo (read-only by default)
 ci: fmtcheck vet test ## The required CI gate
 
 clean:
-	rm -f $(BIN)
+	rm -f $(BIN) $(LEGACY_BIN)
 	rm -rf dist

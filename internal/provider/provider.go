@@ -10,8 +10,10 @@ package provider
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/components/model"
@@ -47,11 +49,41 @@ type Config struct {
 	BaseURL  string
 }
 
+// Model-selection environment variables. INTENT_BOB_EINO_MODEL is canonical;
+// BOB_MODEL is the legacy name kept as a warned compatibility alias — it
+// collides with iam-bob-pydantic's BOB_MODEL, where it means something else
+// (see 000-docs/005-DR-STND-bob-eino-identity-contract.md).
+const (
+	ModelEnv       = "INTENT_BOB_EINO_MODEL"
+	LegacyModelEnv = "BOB_MODEL"
+)
+
+// legacyWarn emits the one-per-process legacy-env deprecation warning. The
+// writer is a variable only so tests can capture it; the warning never
+// includes the variable's value.
+var (
+	legacyWarnOnce sync.Once
+	legacyWarnOut  io.Writer = os.Stderr
+)
+
+func warnLegacyModelEnv() {
+	legacyWarnOnce.Do(func() {
+		fmt.Fprintf(legacyWarnOut, "warning: %s is deprecated; use %s\n", LegacyModelEnv, ModelEnv)
+	})
+}
+
 // Resolve turns a "provider/model" selector plus the environment into a Config.
-// An empty selector falls back to DefaultModel; BOB_MODEL overrides when set.
+// Precedence: explicit selector (CLI) → INTENT_BOB_EINO_MODEL → BOB_MODEL
+// (legacy, warned once per process) → DefaultModel. Values are never printed.
 func Resolve(selector string) (Config, error) {
 	if selector == "" {
-		selector = os.Getenv("BOB_MODEL")
+		selector = os.Getenv(ModelEnv)
+	}
+	if selector == "" {
+		if legacy := os.Getenv(LegacyModelEnv); legacy != "" {
+			warnLegacyModelEnv()
+			selector = legacy
+		}
 	}
 	if selector == "" {
 		selector = DefaultModel
