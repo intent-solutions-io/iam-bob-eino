@@ -40,9 +40,10 @@ provider-neutral BYOK model boundary (zero Google), and BigBrain/AGP/MC seams.
 1. **IEP kernel consumption from Go** (`@intentsolutions/core` has no Go path):
    in-process JSON-Schema validation vs. Python sidecar vs. AGP — architectural,
    taken to HQ. Blocks the kernel/AGP/signing wiring behind `internal/seams`.
-2. **Repo license posture** — matched the direct sibling `iam-bob-pydantic`
-   (Intent Solutions Proprietary) on a public repo; confirm vs. Apache-2.0 (which
-   `iam-bob-intendant` uses).
+2. **Repo license** — RESOLVED: Apache-2.0. Bob builds on CloudWeGo Eino +
+   eino-ext (both Apache-2.0), so the runtime matches the SDK/ADK it depends on
+   (also consistent with `iam-bob-intendant` and the IEP ecosystem). `LICENSE` +
+   `NOTICE` added.
 3. **Single-agent vs. Eino-ADK department** — built single-agent per the ratified
    pydantic decision; a department is a separate explicit call.
 

@@ -1,0 +1,6 @@
+iam-bob-eino
+Copyright 2026 Intent Solutions LLC / Jeremy Longshore
+
+This product is licensed under the Apache License, Version 2.0.
+It builds on CloudWeGo Eino (github.com/cloudwego/eino) and eino-ext,
+both Apache-2.0.
