@@ -21,6 +21,27 @@ the rest of the Intent Solutions estate.
 It is **not** a new agent framework, a multi-agent swarm, an identity system, or a
 reimplementation of Eino / AGP / Mission Control / Big Brain. Those are consumed through seams.
 
+## Naming — persona vs machine identity
+
+**"Bob" is the human-facing persona, never a machine key.** Machine surfaces use the structured
+identity contract (`internal/identity`, schema `schemas/intent-agent-identity.v1.schema.json`;
+decision: [`000-docs/004-AT-DECR-bob-eino-machine-identity.md`](000-docs/004-AT-DECR-bob-eino-machine-identity.md)):
+
+| Level | Value | Meaning |
+|---|---|---|
+| family | `intent-agent-model` | the IAM project family (**not** Identity & Access Management) |
+| persona | `bob` | shared human-facing persona across runtimes |
+| agent | `intent-agent-model/bob` | stable across compatible Bob runtimes |
+| runtime | `eino-go` | this implementation technology |
+| implementation | `iam-bob-eino` | this codebase |
+| component | `intent-bob-eino` | canonical operational name (binary/service/telemetry/state) |
+
+- **Canonical binary: `bob-eino`** (`cmd/bob-eino`). **`bob`** remains a tested compatibility
+  alias that prints one deprecation line to stderr (`cmd/bob`); both share `internal/cli`.
+- **Canonical env namespace: `INTENT_BOB_EINO_*`** (legacy `BOB_*` still read, warned once).
+- **Canonical state: `$XDG_STATE_HOME/intent-solutions/agents/bob/eino-go/`** (legacy
+  `iam-bob-eino/` still readable; never destructively migrated).
+
 ## What Bob does (this slice)
 
 Point Bob at a workspace and give it a task. It inspects the repository, reasons about the work,
@@ -40,30 +61,38 @@ append-only log, shaped to project into Mission Control.
 ## Quick start (BYOK, zero GCP)
 
 ```bash
-go build -o bob ./cmd/bob
+make build            # builds the canonical bob-eino binary (./cmd/bob-eino)
 
 # Bring your own key for any non-Google provider:
 export DEEPSEEK_API_KEY=...        # or OPENAI_API_KEY / GROQ_API_KEY / ZHIPU_API_KEY, or run Ollama locally
 
 # Read-only by default:
-./bob -workspace . "list the Go files and describe the governance model"
+./bob-eino -workspace . "list the Go files and describe the governance model"
 
 # Allow writes (still gated by an approval prompt):
-./bob -workspace . -allow-writes "add a doc comment to internal/verify/verify.go"
+./bob-eino -workspace . -allow-writes "add a doc comment to internal/verify/verify.go"
 
 # Non-interactive, pre-authorized:
-./bob -workspace . -allow-writes -yes -model deepseek/deepseek-chat "run the tests"
+./bob-eino -workspace . -allow-writes -yes -model deepseek/deepseek-chat "run the tests"
 ```
 
-Evidence is written to `<workspace>/.bob/evidence.jsonl`.
+`make build-legacy` builds the deprecated `bob` alias (same implementation, one stderr warning).
+
+Evidence is written OUTSIDE the workspace to
+`$XDG_STATE_HOME/intent-solutions/agents/bob/eino-go/evidence.jsonl` (default
+`~/.local/state/...`), so the audited agent cannot reach its own audit trail;
+override with `-evidence <path>`.
 
 ## Architecture
 
 ```
-cmd/bob            CLI surface (flags → workspace, policy, approver, evidence, model → agent)
+cmd/bob-eino       canonical CLI entry point (thin wrapper over internal/cli)
+cmd/bob            legacy compatibility alias (one deprecation line, same internal/cli)
 internal/
+  cli              the single CLI implementation (flags → workspace, policy, approver, evidence, model → agent) + state paths
+  identity         structured machine identity (family/persona/agent/runtime/component/role/instance/run) — the single creation path
   agent            persona + wires Bob onto Eino's adk.ChatModelAgent + Runner
-  provider         provider-neutral BYOK model boundary (OpenAI-compatible; zero Google) + fake model for tests
+  provider         provider-neutral BYOK model boundary (OpenAI-compatible; zero Google) + offline model stub for tests
   governor         the single control point: policy → approval → execution seam → evidence (one record per action)
   policy           R0–R4 risk model + deterministic policy decision + command allowlist
   approval         human-in-the-loop authorization (auto / deny-by-default / interactive prompt)

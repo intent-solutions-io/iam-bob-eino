@@ -30,7 +30,7 @@ sections only.
 - L2: `gofmt`, `go vet` (CI, blocking); `govulncheck` (CI); `golangci-lint`
   (advisory via `make lint`).
 - L3: `go test -race ./...` across 12 test files.
-- L4: `internal/agent` end-to-end through Eino's ADK with a fake model.
+- L4: `internal/agent` end-to-end through Eino's ADK with the deterministic Eino model fixture.
 - L6: `cmd/bob` CLI smoke test.
 
 ## Frameworks (observational)

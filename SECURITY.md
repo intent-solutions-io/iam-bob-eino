@@ -16,8 +16,12 @@ behalf of an LLM. Its safety rests on four boundaries, all in `internal/`:
    shows the **full command** or the **file path + content hash** being
    authorized. `--yes` pre-authorizes a session.
 4. **Evidence boundary** (`evidence`) — every action emits one content-safe,
-   hash-chained record to an append-only log **outside the workspace**, so the
-   audited agent cannot read, rewrite, or delete its own audit trail.
+   hash-chained record to an append-only log **outside the workspace** (canonical
+   `$XDG_STATE_HOME/intent-solutions/agents/bob/eino-go/`), so the audited agent
+   cannot read, rewrite, or delete its own audit trail. Since evidence schema v2
+   each record embeds the structured `agent_identity` **inside the hash chain**,
+   so a forged or edited identity breaks verification; legacy records without
+   the field still parse and self-verify.
 
 ## Hardening implemented
 

@@ -3,12 +3,13 @@
 ## Prerequisites
 
 - Go 1.25+ (developed on 1.26).
-- No network is required for the test suite; it uses a fake model.
+- No network is required for the test suite; it uses a deterministic offline model stub.
 
 ## Build, test, run
 
 ```bash
-make build        # compile ./cmd/bob
+make build        # compile the canonical bob-eino binary (./cmd/bob-eino)
+make build-legacy # compile the deprecated `bob` alias (./cmd/bob, same internal/cli)
 make test         # go test ./...
 make test-race    # go test -race ./...
 make vet          # go vet
@@ -33,6 +34,10 @@ make run-local TASK='describe the governance model'
 - **The governor is the only control point.** Any new tool must route every side
   effect through `governor` (policy → approval → verify → evidence) and must not
   perform file I/O outside `workspace`'s symlink-safe methods.
+- **Identity strings have one home.** Machine names come from `internal/identity`
+  / `internal/version`; never bare `"bob"` as a machine key (binary, service,
+  env prefix, telemetry, agent name). Contract:
+  `000-docs/005-DR-STND-bob-eino-identity-contract.md`.
 - **Commits**: `type(scope): imperative subject`, body explains what + why + how
   verified. Branch from `main`; open a PR; do not commit to `main`.
 

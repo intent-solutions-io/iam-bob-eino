@@ -26,7 +26,7 @@ security scan, CLI smoke), addressed in the same change.
 | L1 hooks + CI | CI only | CI + pre-commit hook | `scripts/hooks/pre-commit` (fmt+vet+build+test); `make hooks` installs it |
 | L2 static + security | gofmt+vet in CI | + govulncheck in CI | golangci-lint optional (`make lint`); gosec advisory (future) |
 | L3 unit | 8 files, 60.9% | 14 files, ~63% | added governor, verify, approval suites; core packages now covered |
-| L4 integration | agent↔Eino e2e | same | `internal/agent` drives the real ADK with a fake model |
+| L4 integration | agent↔Eino e2e | same | `internal/agent` drives the real ADK with the deterministic Eino model fixture |
 | L6 CLI smoke | none | `cmd/bob` smoke test | builds the binary, exercises `-version` + usage |
 | L5 / L7 | waived | waived | see above |
 
