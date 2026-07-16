@@ -1,0 +1,28 @@
+# Binaries
+/bob
+/dist/
+*.exe
+*.test
+*.out
+
+# Bob runtime evidence + scratch (never commit evidence logs)
+.bob/
+
+# Go
+/vendor/
+coverage.txt
+coverage.html
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Secrets — never commit
+*.env
+.env
+!.env.example
+*.key
+secrets.*.yaml
+!secrets.example.yaml
