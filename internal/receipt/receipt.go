@@ -19,10 +19,15 @@ import (
 	"strings"
 
 	"github.com/intent-solutions-io/iam-bob-eino/internal/evidence"
+	"github.com/intent-solutions-io/iam-bob-eino/internal/identity"
 )
 
-// SchemaVersion identifies the receipt schema emitted by this package.
-const SchemaVersion = "bob.receipt.v1"
+// SchemaVersion identifies the receipt schema emitted by this package. The id
+// is component-namespaced per the identity contract (never bare "bob"; see
+// 000-docs/005-DR-STND-bob-eino-identity-contract.md) and matches the style
+// of version.EvidenceSchemaVersion. v1 includes the optional structured
+// agent_identity object (this schema was never released without it).
+const SchemaVersion = "intent-bob-eino-receipt/v1"
 
 // AuthorityLocalUntrusted is the only authority value a receipt may carry:
 // receipts are self-reported by the agent process and must never claim any
@@ -37,13 +42,22 @@ const MaxAgentClaimLen = 2000
 // All fields hold hashes, identifiers, short summaries, or workspace-relative
 // paths — never raw file contents or secrets.
 type RunReceipt struct {
-	SchemaVersion          string         `json:"schema_version"`
-	RunID                  string         `json:"run_id"`
-	PlanID                 string         `json:"plan_id"`
-	PlanHash               string         `json:"plan_hash"`
-	Task                   string         `json:"task"`
-	AgentName              string         `json:"agent_name"`
-	AgentVersion           string         `json:"agent_version"`
+	SchemaVersion string `json:"schema_version"`
+	RunID         string `json:"run_id"`
+	PlanID        string `json:"plan_id"`
+	PlanHash      string `json:"plan_hash"`
+	Task          string `json:"task"`
+	AgentName     string `json:"agent_name"`
+	AgentVersion  string `json:"agent_version"`
+
+	// AgentIdentity is the structured machine identity of the run
+	// (internal/identity, intent-agent-identity/v1). A pointer so receipts
+	// sealed without it (nil → omitted from JSON) keep their canonical byte
+	// shape and hash. It sits inside CanonicalHash's serialization, so a
+	// sealed receipt's identity is bound by content_hash — editing any
+	// identity field after sealing fails VerifyHash.
+	AgentIdentity *identity.AgentIdentity `json:"agent_identity,omitempty"`
+
 	Engine                 string         `json:"engine"`
 	EngineVersion          string         `json:"engine_version"`
 	Provider               string         `json:"provider"`
@@ -113,6 +127,14 @@ func canonicalJSON(v any) ([]byte, error) {
 func Seal(r RunReceipt) (RunReceipt, error) {
 	if r.Authority != "" && r.Authority != AuthorityLocalUntrusted {
 		return RunReceipt{}, fmt.Errorf("receipt: refusing to seal with authority %q; only %q is allowed", r.Authority, AuthorityLocalUntrusted)
+	}
+	// A present identity must satisfy the identity contract — an invalid
+	// identity must never be laundered into a sealed audit record. Absent
+	// identity is allowed (pre-identity receipt shape).
+	if r.AgentIdentity != nil {
+		if err := r.AgentIdentity.Validate(); err != nil {
+			return RunReceipt{}, fmt.Errorf("receipt: refusing to seal with invalid agent identity: %w", err)
+		}
 	}
 	r = Redact(r)
 	if r.SchemaVersion == "" {
