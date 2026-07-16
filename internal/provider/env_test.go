@@ -81,7 +81,12 @@ func TestResolveDefaultWhenNoEnv(t *testing.T) {
 	resetLegacyWarn()
 	t.Setenv(ModelEnv, "")
 	t.Setenv(LegacyModelEnv, "")
-	t.Setenv("DEEPSEEK_API_KEY", "test-key")
+	// Satisfy the default provider's BYOK requirement whatever it is, so this
+	// test tracks DefaultModel instead of hardcoding a provider.
+	defProvider, _, _ := strings.Cut(DefaultModel, "/")
+	if entry, ok := Registry[defProvider]; ok && entry.keyEnv != "" {
+		t.Setenv(entry.keyEnv, "test-key")
+	}
 	cfg, err := Resolve("")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
