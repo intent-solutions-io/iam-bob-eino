@@ -204,6 +204,39 @@ func TestPlanDraftPrefersTheRealObjectOverStrays(t *testing.T) {
 	}
 }
 
+// TestPlanDraftSurvivesUnbalancedProseQuotesAndBraces: PR #7 review finding —
+// prose BEFORE the draft containing an unbalanced quoted brace must not
+// corrupt extraction (decode-driven scanning, not span-guessing).
+func TestPlanDraftSurvivesUnbalancedProseQuotesAndBraces(t *testing.T) {
+	answers := []string{
+		`Some "prose { without closing brace" and then the draft:` + "\n" + goodDraft,
+		`Note: config has a stray { here and an unmatched " quote` + "\n" + goodDraft,
+	}
+	for i, answer := range answers {
+		d, err := parsePlanDraft(answer)
+		if err != nil {
+			t.Fatalf("case %d: %v", i, err)
+		}
+		if len(d.ProposedFiles) != 1 || d.ProposedFiles[0] != "hello.txt" {
+			t.Errorf("case %d draft = %+v", i, d)
+		}
+	}
+}
+
+// TestPlanDraftPreservesLiteralThinkTagsInsideStrings: PR #7 review finding —
+// a legitimate draft whose STRING VALUES mention think tags must parse intact
+// (raw-first extraction; stripping is only the fallback).
+func TestPlanDraftPreservesLiteralThinkTagsInsideStrings(t *testing.T) {
+	draft := `{"proposed_actions":["document the <think>reasoning</think> marker handling"],"proposed_files":["hello.txt"],"proposed_commands":[],"required_capabilities":["writes"],"acceptance_checks":["go test ./..."],"risks":[],"assumptions":[],"questions":[]}`
+	d, err := parsePlanDraft(draft)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if d.ProposedActions[0] != "document the <think>reasoning</think> marker handling" {
+		t.Errorf("literal think tags were mangled: %+v", d.ProposedActions)
+	}
+}
+
 // TestPlanDraftBracesInsideJSONStringsDoNotSplitSpans: the candidate scanner
 // must be string-aware.
 func TestPlanDraftBracesInsideJSONStringsDoNotSplitSpans(t *testing.T) {

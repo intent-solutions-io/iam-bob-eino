@@ -210,15 +210,33 @@ type planDraft struct {
 var thinkBlockRe = regexp.MustCompile(`(?is)<think>.*?</think>`)
 
 // parsePlanDraft strictly parses the model's final answer into a draft.
-// Reasoning blocks are stripped, then every balanced top-level JSON object in
-// the remaining text is tried NEWEST-FIRST (the draft conventionally ends the
-// answer); the first candidate that strictly decodes AND carries at least one
-// acceptance check wins. Any deviation — no parsable object, unknown fields,
-// unknown capability names, no acceptance checks anywhere — returns a typed
-// ErrPlanDraft and nothing is written.
+// Extraction is DECODE-DRIVEN, not span-guessing: every '{' offset is tried
+// newest-first (the draft conventionally ends the answer) and the JSON
+// decoder itself decides where a value ends, so unbalanced quotes or braces
+// in surrounding prose can never corrupt the scan. The raw answer is tried
+// FIRST — a legitimate draft whose strings contain literal think-tags parses
+// intact — and only if that fails are <think> reasoning blocks stripped and
+// extraction retried. A winning candidate must strictly decode AND carry at
+// least one acceptance check, so a stray "{}" in prose can never outrank the
+// real draft. Any deviation returns a typed ErrPlanDraft; nothing is written.
 func parsePlanDraft(answer string) (planDraft, error) {
-	raw := thinkBlockRe.ReplaceAllString(strings.TrimSpace(answer), "")
-	raw = strings.TrimSpace(raw)
+	raw := strings.TrimSpace(answer)
+	if d, err := extractDraft(raw); err == nil {
+		return d, nil
+	}
+	stripped := strings.TrimSpace(thinkBlockRe.ReplaceAllString(raw, ""))
+	d, err := extractDraft(stripped)
+	if err != nil {
+		return planDraft{}, fmt.Errorf("%w: %v", ErrPlanDraft, err)
+	}
+	return d, nil
+}
+
+// extractDraft tries to decode a draft starting at each '{' in raw, newest
+// first, and returns the first candidate that satisfies decodeDraft. The
+// reported error is the newest candidate's failure (the most likely "almost
+// a draft" object).
+func extractDraft(raw string) (planDraft, error) {
 	// Tolerate a fenced code block around the object, nothing else.
 	if strings.HasPrefix(raw, "```") {
 		raw = strings.TrimPrefix(raw, "```json")
@@ -226,24 +244,25 @@ func parsePlanDraft(answer string) (planDraft, error) {
 		raw = strings.TrimSuffix(strings.TrimSpace(raw), "```")
 		raw = strings.TrimSpace(raw)
 	}
-	candidates := jsonObjectCandidates(raw)
-	if len(candidates) == 0 {
-		return planDraft{}, fmt.Errorf("%w: no JSON object in the model answer", ErrPlanDraft)
-	}
-	var lastErr error
-	for _, candidate := range candidates {
-		d, err := decodeDraft(candidate)
+	firstErr := fmt.Errorf("no JSON object in the model answer")
+	seen := false
+	for i := strings.LastIndexByte(raw, '{'); i >= 0; i = strings.LastIndexByte(raw[:i], '{') {
+		d, err := decodeDraft(raw[i:])
 		if err == nil {
 			return d, nil
 		}
-		lastErr = err
+		if !seen {
+			firstErr, seen = err, true
+		}
 	}
-	return planDraft{}, fmt.Errorf("%w: %v", ErrPlanDraft, lastErr)
+	return planDraft{}, firstErr
 }
 
-// decodeDraft strictly decodes one candidate object. A draft without any
-// acceptance check is rejected here so a stray "{}" in prose can never
-// outrank the real draft.
+// decodeDraft strictly decodes exactly one JSON value from the start of raw
+// (trailing prose after the value is expected and ignored — the decoder
+// consumed a complete object). A draft without any acceptance check is
+// rejected here so empty or unrelated objects fall through to the next
+// candidate.
 func decodeDraft(raw string) (planDraft, error) {
 	dec := json.NewDecoder(strings.NewReader(raw))
 	dec.DisallowUnknownFields()
@@ -260,52 +279,6 @@ func decodeDraft(raw string) (planDraft, error) {
 		}
 	}
 	return d, nil
-}
-
-// jsonObjectCandidates returns every balanced top-level {...} span in s,
-// ordered newest-first. The scanner is string-aware inside objects so braces
-// within JSON strings do not split spans; candidates that are not valid JSON
-// simply fail decodeDraft and fall through.
-func jsonObjectCandidates(s string) []string {
-	var spans []string
-	depth, start := 0, -1
-	inStr, esc := false, false
-	for i, r := range s {
-		if inStr {
-			switch {
-			case esc:
-				esc = false
-			case r == '\\':
-				esc = true
-			case r == '"':
-				inStr = false
-			}
-			continue
-		}
-		switch r {
-		case '"':
-			if depth > 0 {
-				inStr = true
-			}
-		case '{':
-			if depth == 0 {
-				start = i
-			}
-			depth++
-		case '}':
-			if depth > 0 {
-				depth--
-				if depth == 0 && start >= 0 {
-					spans = append(spans, s[start:i+1])
-					start = -1
-				}
-			}
-		}
-	}
-	for l, r := 0, len(spans)-1; l < r; l, r = l+1, r-1 {
-		spans[l], spans[r] = spans[r], spans[l]
-	}
-	return spans
 }
 
 // requiredCapabilities merges what the model declared with what its own
