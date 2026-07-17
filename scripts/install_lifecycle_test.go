@@ -5,6 +5,8 @@
 package scripts
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -47,14 +49,14 @@ func buildRelease(t *testing.T, version string) (archive, checksums string) {
 	if out, err := tar.CombinedOutput(); err != nil {
 		t.Fatalf("tar: %v\n%s", err, out)
 	}
-	sum := exec.Command("sha256sum", filepath.Base(archive))
-	sum.Dir = filepath.Dir(archive)
-	out, err := sum.Output()
+	raw, err := os.ReadFile(archive)
 	if err != nil {
 		t.Fatal(err)
 	}
+	digest := sha256.Sum256(raw)
+	line := hex.EncodeToString(digest[:]) + "  " + filepath.Base(archive) + "\n"
 	checksums = filepath.Join(filepath.Dir(archive), "checksums.txt")
-	if err := os.WriteFile(checksums, out, 0o644); err != nil {
+	if err := os.WriteFile(checksums, []byte(line), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return archive, checksums

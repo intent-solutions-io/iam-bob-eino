@@ -50,6 +50,18 @@ CANONICAL="$BIN_DIR/bob-eino"
 PREV="$BIN_DIR/bob-eino.prev"
 LEGACY="$BIN_DIR/bob"
 
+# sha256_of <file>: portable SHA-256 (sha256sum on Linux, shasum -a 256 on
+# macOS which ships no sha256sum by default).
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  else
+    die "neither sha256sum nor shasum found — cannot verify the archive"
+  fi
+}
+
 # is_our_legacy_alias: true when the `bob` at $1 is OUR compatibility alias
 # (its stderr deprecation line names bob-eino and its output carries the
 # component id). Anything else — e.g. iam-bob-intendant's bob — is foreign.
@@ -72,7 +84,7 @@ verify_archive() {
   base="$(basename "$ARCHIVE")"
   want="$(awk -v f="$base" '$2 == f || $2 == "*"f {print $1}' "$CHECKSUMS")"
   [ -n "$want" ] || die "no checksum entry for $base in $CHECKSUMS — refusing to install"
-  got="$(sha256sum "$ARCHIVE" | awk '{print $1}')"
+  got="$(sha256_of "$ARCHIVE")"
   [ "$got" = "$want" ] || die "CHECKSUM MISMATCH for $base (expected $want, got $got) — refusing to install"
   note "checksum verified: $base"
 }

@@ -208,9 +208,16 @@ func TestLiveMiniMaxSmoke(t *testing.T) {
 		t.Fatalf("evidence chain broken after the live run:\n%s", so.String())
 	}
 
-	// No credential in the durable artifacts either.
-	evRaw, _ := os.ReadFile(filepath.Join(StateDir(), "evidence.jsonl"))
-	rcRaw, _ := os.ReadFile(runOut.Receipt)
+	// No credential in the durable artifacts either. Read errors here would
+	// silently void the leak check, so they are fatal.
+	evRaw, err := os.ReadFile(filepath.Join(StateDir(), "evidence.jsonl"))
+	if err != nil {
+		t.Fatalf("cannot read the evidence log for the leak check: %v", err)
+	}
+	rcRaw, err := os.ReadFile(runOut.Receipt)
+	if err != nil {
+		t.Fatalf("cannot read the receipt for the leak check: %v", err)
+	}
 	if strings.Contains(string(evRaw), credential) || strings.Contains(string(rcRaw), credential) {
 		t.Fatal("CREDENTIAL LEAKED into evidence or receipt")
 	}
