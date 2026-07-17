@@ -9,15 +9,23 @@ BIN        ?= bob-eino
 LEGACY_BIN ?= bob
 PKG        := ./...
 
+# Build metadata injected into internal/version at link time. Uses the git
+# COMMIT DATE (not the wall clock) so rebuilding the same commit is
+# reproducible; both degrade to "unknown" outside a git checkout.
+BUILD_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+BUILD_DATE   := $(shell git show -s --format=%cI HEAD 2>/dev/null || echo unknown)
+VERSION_PKG  := github.com/intent-solutions-io/iam-bob-eino/internal/version
+LDFLAGS      := -X $(VERSION_PKG).BuildCommit=$(BUILD_COMMIT) -X $(VERSION_PKG).BuildDate=$(BUILD_DATE)
+
 .PHONY: all build build-legacy test test-race vet fmt fmtcheck tidy lint hooks run-local ci clean
 
 all: build
 
-build: ## Compile the canonical bob-eino binary
-	$(GO) build -o $(BIN) ./cmd/bob-eino
+build: ## Compile the canonical bob-eino binary (with build metadata)
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/bob-eino
 
 build-legacy: ## Compile the legacy `bob` compatibility alias (same internal/cli)
-	$(GO) build -o $(LEGACY_BIN) ./cmd/bob
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(LEGACY_BIN) ./cmd/bob
 
 test: ## Run the full test suite
 	$(GO) test $(PKG)
