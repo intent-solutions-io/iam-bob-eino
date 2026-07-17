@@ -62,7 +62,7 @@ func TestOfflineRunEmitsIdentityInOnDiskEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := agent.Run(context.Background(), ag, "read hello.txt", io.Discard); err != nil {
+	if _, _, err := agent.Run(context.Background(), ag, "read hello.txt", io.Discard); err != nil {
 		t.Fatalf("agent.Run: %v", err)
 	}
 	sink.Close()

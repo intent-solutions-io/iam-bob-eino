@@ -181,6 +181,12 @@ func TestLiveMiniMaxSmoke(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("live run exited %d with final_status=%s — the proof requires a verified fix\n%s", code, runOut.FinalStatus, se.String())
 	}
+	// MiniMax returns usage on every chat completion (verified directly
+	// against the API); an empty usage map is a regression in our
+	// accounting, not a provider quirk.
+	if len(r.Usage) == 0 {
+		t.Fatal("receipt carries no provider usage — accounting regression")
+	}
 
 	// The correction must be real: the fixture test passes now, and only the
 	// expected file changed.

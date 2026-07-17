@@ -56,7 +56,7 @@ func TestAgentRunsGovernedToolThroughEino(t *testing.T) {
 		t.Fatalf("agent.New: %v", err)
 	}
 
-	answer, err := agent.Run(context.Background(), ag, "read hello.txt", io.Discard)
+	answer, _, err := agent.Run(context.Background(), ag, "read hello.txt", io.Discard)
 	if err != nil {
 		t.Fatalf("agent.Run: %v", err)
 	}
