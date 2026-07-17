@@ -221,10 +221,16 @@ var thinkBlockRe = regexp.MustCompile(`(?is)<think>.*?</think>`)
 // real draft. Any deviation returns a typed ErrPlanDraft; nothing is written.
 func parsePlanDraft(answer string) (planDraft, error) {
 	raw := strings.TrimSpace(answer)
-	if d, err := extractDraft(raw); err == nil {
+	d, rawErr := extractDraft(raw)
+	if rawErr == nil {
 		return d, nil
 	}
+	// Retry with reasoning blocks removed — but only when stripping actually
+	// changed the text; an identical retry would just repeat the same work.
 	stripped := strings.TrimSpace(thinkBlockRe.ReplaceAllString(raw, ""))
+	if stripped == raw {
+		return planDraft{}, fmt.Errorf("%w: %v", ErrPlanDraft, rawErr)
+	}
 	d, err := extractDraft(stripped)
 	if err != nil {
 		return planDraft{}, fmt.Errorf("%w: %v", ErrPlanDraft, err)
