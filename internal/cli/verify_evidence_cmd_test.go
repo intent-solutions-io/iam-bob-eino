@@ -22,6 +22,7 @@ func evidenceSinkAt(path string) (*evidence.JSONLSink, error) {
 	}
 	for i := 0; i < 2; i++ {
 		if err := sink.Write(evidence.Record{ActionID: "a", CorrelationID: "legacy-only-run"}); err != nil {
+			sink.Close()
 			return nil, err
 		}
 	}
