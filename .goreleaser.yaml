@@ -1,0 +1,88 @@
+# GoReleaser v2 configuration for the intent-bob-eino component.
+#
+# Naming follows the identity contract (000-docs/005): the ARTIFACT and
+# project identity is the component id `intent-bob-eino`; the installed
+# binaries stay `bob-eino` (canonical) and `bob` (deprecated compatibility
+# alias). Platforms are limited to what the code is actually exercised on —
+# no Windows claim (untested).
+version: 2
+
+project_name: intent-bob-eino
+
+builds:
+  - id: bob-eino
+    main: ./cmd/bob-eino
+    binary: bob-eino
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    # Reproducibility: commit timestamp, commit date — never the wall clock.
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    ldflags:
+      - -s -w
+      - -X github.com/intent-solutions-io/iam-bob-eino/internal/version.AgentVersion={{ .Version }}
+      - -X github.com/intent-solutions-io/iam-bob-eino/internal/version.BuildCommit={{ .ShortCommit }}
+      - -X github.com/intent-solutions-io/iam-bob-eino/internal/version.BuildDate={{ .CommitDate }}
+
+  - id: bob-legacy
+    main: ./cmd/bob
+    binary: bob
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    ldflags:
+      - -s -w
+      - -X github.com/intent-solutions-io/iam-bob-eino/internal/version.AgentVersion={{ .Version }}
+      - -X github.com/intent-solutions-io/iam-bob-eino/internal/version.BuildCommit={{ .ShortCommit }}
+      - -X github.com/intent-solutions-io/iam-bob-eino/internal/version.BuildDate={{ .CommitDate }}
+
+archives:
+  - id: default
+    ids: [bob-eino, bob-legacy]
+    name_template: "intent-bob-eino_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    files:
+      - LICENSE
+      - NOTICE
+      - README.md
+      # The schema needed to inspect evidence/receipt identity offline.
+      - schemas/*.json
+      # Install / upgrade / rollback / uninstall procedure travels with the
+      # artifact so an air-gapped operator has it.
+      - src: 000-docs/011-DR-GUID-install-upgrade-rollback.md
+        dst: INSTALL.md
+
+checksum:
+  name_template: "intent-bob-eino_{{ .Version }}_checksums.txt"
+  algorithm: sha256
+
+sboms:
+  - id: archive-sbom
+    artifacts: archive
+    documents:
+      - "{{ .ArtifactName }}.sbom.spdx.json"
+
+snapshot:
+  version_template: "{{ .Version }}-snapshot-{{ .ShortCommit }}"
+
+changelog:
+  use: git
+  filters:
+    exclude:
+      - "^chore\\(mc\\):"
+
+release:
+  github:
+    owner: intent-solutions-io
+    name: iam-bob-eino
+  # rc/pre-release tags publish as GitHub prereleases automatically.
+  prerelease: auto
+  draft: false
+  footer: |
+    ---
+    **Identity:** component `intent-bob-eino` · agent `intent-agent-model/bob` · runtime `eino-go`.
+    Verify any archive against `intent-bob-eino_{{ .Version }}_checksums.txt` before installing
+    (procedure: `INSTALL.md` inside each archive).

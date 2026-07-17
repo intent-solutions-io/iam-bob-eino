@@ -45,8 +45,12 @@ plan → run → verify lifecycle; the flat one-shot form is a deprecated fallba
   auto-approves in-plan actions only and structurally refuses variance.
 - Abnormal ends are typed (`limit_exhausted:* | plan_invalidated | timeout |
   max_steps_exhausted | provider_error`) — never claimed successes.
-- The live MiniMax smoke is double-gated (`INTENT_BOB_EINO_LIVE_SMOKE=1` +
-  `MINIMAX_API_KEY`, `scripts/live-smoke.sh`) and must never be armed in CI.
+- The live MiniMax proof is double-gated (`INTENT_BOB_EINO_LIVE_SMOKE=1` +
+  `MINIMAX_API_KEY`, `scripts/live-smoke.sh`, procedure `000-docs/012`) and
+  must never be armed in CI; no provider credential belongs in Actions.
+- Releases: GoReleaser archives + checksums + SBOMs (`000-docs/010`);
+  `scripts/install.sh` handles install/upgrade/rollback/uninstall; a release
+  tag requires the live proof — never tag when it was skipped or failed.
 
 ## Build & test
 

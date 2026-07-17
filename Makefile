@@ -61,6 +61,9 @@ TASK ?= list the files in this repo and describe what Bob is
 run-local: build ## Run Bob against this repo (read-only by default)
 	./$(BIN) -workspace . $(TASK)
 
+snapshot: ## Local release validation: all platforms + checksums + SBOMs, no publish
+	goreleaser release --snapshot --clean --skip=publish
+
 ci: fmtcheck vet test ## The required CI gate
 
 clean:

@@ -78,9 +78,18 @@ receipts + evidence-log loader) · `internal/doctor` (preflight checks) ·
 confinement) · `internal/seams` (BigBrain / AGP / Mission Control interfaces).
 
 CLI surface + migration guidance: `000-docs/009-DR-GUID-cli-subcommands-and-migration.md`.
-The live MiniMax smoke is double-gated (`INTENT_BOB_EINO_LIVE_SMOKE=1` +
-`MINIMAX_API_KEY`; `scripts/live-smoke.sh`) and NEVER runs in CI — do not arm it
-from any workflow.
+The live MiniMax proof is double-gated (`INTENT_BOB_EINO_LIVE_SMOKE=1` +
+`MINIMAX_API_KEY`; `scripts/live-smoke.sh`, procedure `000-docs/012`) and NEVER
+runs in CI — do not arm it from any workflow, and never put a provider
+credential in GitHub Actions.
+
+**Release tooling:** GoReleaser (`.goreleaser.yaml`, `make snapshot` for local
+validation) builds `intent-bob-eino_<version>_<os>_<arch>` archives with
+checksums + Syft SBOMs; tags trigger `.github/workflows/release.yml`.
+`scripts/install.sh` is the checksum-verified install/upgrade/rollback/
+uninstall lifecycle (tested in `scripts/install_lifecycle_test.go`). Process +
+gates: `000-docs/010`; a release tag requires the live MiniMax proof — never
+tag when it was skipped or failed.
 
 ## Deferred / do not guess
 
