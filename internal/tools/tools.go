@@ -39,9 +39,10 @@ const (
 	commandTimeout   = 60 * time.Second
 )
 
-// All builds the full set of governed tools bound to a governor.
+// All builds the full set of governed tools bound to a governor. apply_patch
+// lives ONLY here — planning's ReadOnly set never constructs it.
 func All(g *governor.Governor) ([]tool.BaseTool, error) {
-	return build(g, newReadFile, newListDir, newSearchCode, newRunCommand, newWriteFile)
+	return build(g, newReadFile, newListDir, newSearchCode, newRunCommand, newWriteFile, newApplyPatch)
 }
 
 // ReadOnly builds only the read-only tool set (read_file, list_dir,
