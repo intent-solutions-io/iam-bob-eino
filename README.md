@@ -44,38 +44,55 @@ decision: [`000-docs/004-AT-DECR-bob-eino-machine-identity.md`](000-docs/004-AT-
 
 ## What Bob does (this slice)
 
-Point Bob at a workspace and give it a task. It inspects the repository, reasons about the work,
-and acts **only through governed tools**:
+Bob runs a governed **plan → run → verify** task lifecycle over a workspace. Planning is
+read-only by construction; execution is bound to the sealed plan by a variance guard; the outcome
+is judged by a model-free verifier and sealed into a tamper-evident receipt. All model access is
+MiniMax-first BYOK (`minimax/MiniMax-M3` is the documented default; any OpenAI-compatible
+provider in the registry works; zero Google).
+
+| Command | What it does |
+|---|---|
+| `bob-eino version` | identity, ldflags build provenance, Go/Eino/schema versions (`-json`) |
+| `bob-eino doctor [-net]` | 14 stable-named preflight checks; boolean-only credential checks; non-zero exit on required failures |
+| `bob-eino plan <task>` | read-only-tooled model run → hashed, validated plan artifact saved outside the workspace |
+| `bob-eino run -plan <id>` | pre-flight gates → governed execution under the plan-variance guard + usage limits → sealed, independently verified receipt |
+| `bob-eino verify -receipt <run-id>` | post-hoc re-verification: tamper-rejecting receipt load, evidence re-check, live git end-SHA |
+| `bob-eino evidence list\|show\|verify-chain` | inspect and chain-verify the append-only evidence log |
+
+The agent acts **only through governed tools**:
 
 | Tool | Risk | Governance |
 |---|---|---|
 | `read_file`, `list_dir` | R0 | always allowed, read-only |
 | `search_code` | R1 | always allowed, read-only |
-| `run_command` | R2 | allowlisted programs only, **shell-free**, requires approval |
-| `write_file` | R3 | requires writes enabled **and** approval; the write is independently re-read and hash-verified |
+| `run_command` | R2 | allowlisted programs only, **shell-free**, requires exec enabled + approval |
+| `write_file` | R3 | requires writes enabled **and** approval; independently re-read and hash-verified |
+| `apply_patch` | R3 | `intent-bob-eino-patch/v1`: literal find/replace hunks with verified pre-hashes and exact occurrence counts; two-phase atomic with rollback |
 
 Every call — allowed, denied, executed, or failed — emits one content-safe evidence record
 (no secrets, no file contents; only hashes, workspace-relative paths, and short summaries) to an
-append-only log, shaped to project into Mission Control.
+append-only, hash-chained log, shaped to project into Mission Control. During a `run`, actions
+outside the plan escalate to a **PLAN VARIANCE** approval that `-yes` structurally refuses.
 
-## Quick start (BYOK, zero GCP)
+## Quick start — the lifecycle (BYOK, zero GCP)
 
 ```bash
-make build            # builds the canonical bob-eino binary (./cmd/bob-eino)
+make build                        # canonical bob-eino binary, ldflags build metadata
+export MINIMAX_API_KEY=...        # BYOK (or any registry provider's key)
 
-# Bring your own key for any non-Google provider:
-export DEEPSEEK_API_KEY=...        # or OPENAI_API_KEY / GROQ_API_KEY / ZHIPU_API_KEY, or run Ollama locally
-
-# Read-only by default:
-./bob-eino -workspace . "list the Go files and describe the governance model"
-
-# Allow writes (still gated by an approval prompt):
-./bob-eino -workspace . -allow-writes "add a doc comment to internal/verify/verify.go"
-
-# Non-interactive, pre-authorized:
-./bob-eino -workspace . -allow-writes -yes -model deepseek/deepseek-chat "run the tests"
+./bob-eino doctor -net            # preflight the environment
+./bob-eino plan -workspace ~/src/repo "add input validation to the /orders handler"
+#   → plan_id: plan-…            (hashed artifact, saved outside the workspace)
+./bob-eino run -plan plan-… -workspace ~/src/repo -allow-writes -allow-exec -yes
+#   → run_id: run-…, sealed receipt; exit 0 only when the model-free verifier says verified
+./bob-eino verify -receipt run-…  # re-verify any time later
+./bob-eino evidence verify-chain  # audit-trail integrity
 ```
 
+The original flat one-shot form (`./bob-eino -workspace . "task"`) still works with a stderr
+deprecation note; `bob-eino -- <task>` forces it when a task starts with a command word. Details
+and migration guidance:
+[`000-docs/009-DR-GUID-cli-subcommands-and-migration.md`](000-docs/009-DR-GUID-cli-subcommands-and-migration.md).
 `make build-legacy` builds the deprecated `bob` alias (same implementation, one stderr warning).
 
 Evidence is written OUTSIDE the workspace to
@@ -89,16 +106,26 @@ override with `-evidence <path>`.
 cmd/bob-eino       canonical CLI entry point (thin wrapper over internal/cli)
 cmd/bob            legacy compatibility alias (one deprecation line, same internal/cli)
 internal/
-  cli              the single CLI implementation (flags → workspace, policy, approver, evidence, model → agent) + state paths
+  cli              the single CLI implementation: subcommand dispatch (version/doctor/plan/run/verify/evidence), shared flags, deprecated flat fallback, state paths
+  config           typed configuration (INTENT_BOB_EINO_* namespace, JSON file, precedence merge, typed validation errors)
   identity         structured machine identity (family/persona/agent/runtime/component/role/instance/run) — the single creation path
+  version          build identity + ldflags-injected commit/date + engine introspection
   agent            persona + wires Bob onto Eino's adk.ChatModelAgent + Runner
-  provider         provider-neutral BYOK model boundary (OpenAI-compatible; zero Google) + offline model stub for tests
-  governor         the single control point: policy → approval → execution seam → evidence (one record per action)
+  provider         provider-neutral BYOK model boundary (OpenAI-compatible; MiniMax-first; zero Google) + offline model stub for tests
+  governor         the single control point: limits → policy → plan guard → approval → execution seam → evidence (one record per action)
   policy           R0–R4 risk model + deterministic policy decision + command allowlist
-  approval         human-in-the-loop authorization (auto / deny-by-default / interactive prompt)
-  tools            governed typed tools (read_file, list_dir, search_code, run_command, write_file)
+  approval         human-in-the-loop authorization (auto / deny-by-default / prompt; variance-aware — auto refuses out-of-plan actions)
+  plan             hashed, validated read-only plan artifacts (content-addressed ids, tamper-rejecting Load)
+  planguard        the plan-variance guard (listed → allow; unlisted → variance approval; HEAD drift → plan invalidated)
+  limits           per-run usage bounds (tool-call budget, repeated-identical, consecutive-failure) with typed cancel causes
+  patch            intent-bob-eino-patch/v1 (literal hunks, verified pre-hashes, exact occurrence counts, two-phase atomic apply)
+  gitstate         read-only git state (HEAD, branch, dirty, changed files) with clean degradation
+  tools            governed typed tools (read_file, list_dir, search_code, run_command, write_file, apply_patch) + the read-only planning set
   verify           independent outcome verification (re-read + hash writes; inspect command exit)
-  evidence         Mission-Control-compatible evidence record + append-only JSONL sink + redaction
+  runverify        model-free run-level verifier (evidence chain, workspace/git identity, plan conformance, acceptance exit codes, secret scan)
+  receipt          sealed run receipts (canonical content hash, tamper-rejecting Load) + evidence-log loader
+  doctor           preflight checks with stable machine names and injectable dependencies
+  evidence         Mission-Control-compatible evidence record + append-only JSONL sink (session-spanning hash chain) + redaction
   workspace        root confinement (no path escapes)
   seams            BigBrain / AGP / Mission Control integration boundaries (interfaces + safe local no-ops)
 ```
