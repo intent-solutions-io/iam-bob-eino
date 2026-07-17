@@ -162,6 +162,61 @@ func TestPlanUnknownCapabilityRejected(t *testing.T) {
 	}
 }
 
+// TestPlanDraftSurvivesThinkBlocks reproduces the v0.1.0-rc.1 soak failure:
+// MiniMax-M3 interleaves <think> blocks that may contain braces; extraction
+// must ignore them and find the real draft.
+func TestPlanDraftSurvivesThinkBlocks(t *testing.T) {
+	cases := map[string]string{
+		"think with braces before draft": "<think>Types: 1. `EventType` {has one} — plan: {\"pseudo\": true}</think>\n" + goodDraft,
+		"think after draft":              goodDraft + "\n<think>double-checking {things}</think>",
+		"multiple think blocks":          "<think>first {x}</think>\nHere is the plan:\n" + goodDraft + "\n<think>done</think>",
+		"uppercase tag":                  "<THINK>reasoning {a}{b}</THINK>" + goodDraft,
+	}
+	for name, answer := range cases {
+		t.Run(name, func(t *testing.T) {
+			d, err := parsePlanDraft(answer)
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			if len(d.ProposedFiles) != 1 || d.ProposedFiles[0] != "hello.txt" {
+				t.Errorf("draft = %+v", d)
+			}
+		})
+	}
+}
+
+// TestPlanDraftPrefersTheRealObjectOverStrays: prose objects and trailing
+// empty objects must not outrank the draft (a draft needs acceptance checks).
+func TestPlanDraftPrefersTheRealObjectOverStrays(t *testing.T) {
+	answers := []string{
+		"Note that config uses {\"key\": \"value\"} shapes.\n" + goodDraft,
+		goodDraft + "\n{}",
+		"{\"unrelated\": 1}\n" + goodDraft + "\nSee {} above.",
+	}
+	for i, answer := range answers {
+		d, err := parsePlanDraft(answer)
+		if err != nil {
+			t.Fatalf("case %d: %v", i, err)
+		}
+		if len(d.AcceptanceChecks) == 0 || d.ProposedFiles[0] != "hello.txt" {
+			t.Errorf("case %d picked the wrong object: %+v", i, d)
+		}
+	}
+}
+
+// TestPlanDraftBracesInsideJSONStringsDoNotSplitSpans: the candidate scanner
+// must be string-aware.
+func TestPlanDraftBracesInsideJSONStringsDoNotSplitSpans(t *testing.T) {
+	draft := `{"proposed_actions":["fix the {braced} thing"],"proposed_files":["hello.txt"],"proposed_commands":[],"required_capabilities":["writes"],"acceptance_checks":["go test ./..."],"risks":[],"assumptions":[],"questions":["what about \"quoted } braces\"?"]}`
+	d, err := parsePlanDraft("preamble\n" + draft)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if d.ProposedActions[0] != "fix the {braced} thing" {
+		t.Errorf("draft = %+v", d)
+	}
+}
+
 func TestPlanDraftToleratesCodeFence(t *testing.T) {
 	d, err := parsePlanDraft("```json\n" + goodDraft + "\n```")
 	if err != nil {
