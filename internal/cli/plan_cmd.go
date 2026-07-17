@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -201,11 +202,23 @@ type planDraft struct {
 	Questions            []string `json:"questions"`
 }
 
+// thinkBlockRe matches the <think>…</think> reasoning blocks MiniMax-M3 (the
+// documented default model) interleaves with its answer. They can contain
+// braces and pseudo-JSON, so they are removed before draft extraction —
+// found live in the v0.1.0-rc.1 operational soak, where a brace inside a
+// think block corrupted the naive first-to-last-brace span.
+var thinkBlockRe = regexp.MustCompile(`(?is)<think>.*?</think>`)
+
 // parsePlanDraft strictly parses the model's final answer into a draft.
-// Any deviation — no JSON object, unknown fields, trailing garbage, unknown
-// capability names — returns a typed ErrPlanDraft and nothing is written.
+// Reasoning blocks are stripped, then every balanced top-level JSON object in
+// the remaining text is tried NEWEST-FIRST (the draft conventionally ends the
+// answer); the first candidate that strictly decodes AND carries at least one
+// acceptance check wins. Any deviation — no parsable object, unknown fields,
+// unknown capability names, no acceptance checks anywhere — returns a typed
+// ErrPlanDraft and nothing is written.
 func parsePlanDraft(answer string) (planDraft, error) {
-	raw := strings.TrimSpace(answer)
+	raw := thinkBlockRe.ReplaceAllString(strings.TrimSpace(answer), "")
+	raw = strings.TrimSpace(raw)
 	// Tolerate a fenced code block around the object, nothing else.
 	if strings.HasPrefix(raw, "```") {
 		raw = strings.TrimPrefix(raw, "```json")
@@ -213,28 +226,86 @@ func parsePlanDraft(answer string) (planDraft, error) {
 		raw = strings.TrimSuffix(strings.TrimSpace(raw), "```")
 		raw = strings.TrimSpace(raw)
 	}
-	start := strings.Index(raw, "{")
-	end := strings.LastIndex(raw, "}")
-	if start < 0 || end <= start {
+	candidates := jsonObjectCandidates(raw)
+	if len(candidates) == 0 {
 		return planDraft{}, fmt.Errorf("%w: no JSON object in the model answer", ErrPlanDraft)
 	}
-	raw = raw[start : end+1]
+	var lastErr error
+	for _, candidate := range candidates {
+		d, err := decodeDraft(candidate)
+		if err == nil {
+			return d, nil
+		}
+		lastErr = err
+	}
+	return planDraft{}, fmt.Errorf("%w: %v", ErrPlanDraft, lastErr)
+}
 
+// decodeDraft strictly decodes one candidate object. A draft without any
+// acceptance check is rejected here so a stray "{}" in prose can never
+// outrank the real draft.
+func decodeDraft(raw string) (planDraft, error) {
 	dec := json.NewDecoder(strings.NewReader(raw))
 	dec.DisallowUnknownFields()
 	var d planDraft
 	if err := dec.Decode(&d); err != nil {
-		return planDraft{}, fmt.Errorf("%w: %v", ErrPlanDraft, err)
+		return planDraft{}, err
 	}
-	if dec.More() {
-		return planDraft{}, fmt.Errorf("%w: trailing data after the JSON object", ErrPlanDraft)
+	if len(d.AcceptanceChecks) == 0 {
+		return planDraft{}, fmt.Errorf("draft object has no acceptance_checks")
 	}
 	for _, cap := range d.RequiredCapabilities {
 		if cap != "writes" && cap != "exec" {
-			return planDraft{}, fmt.Errorf("%w: unknown capability %q (only \"writes\" and \"exec\" exist)", ErrPlanDraft, cap)
+			return planDraft{}, fmt.Errorf("unknown capability %q (only \"writes\" and \"exec\" exist)", cap)
 		}
 	}
 	return d, nil
+}
+
+// jsonObjectCandidates returns every balanced top-level {...} span in s,
+// ordered newest-first. The scanner is string-aware inside objects so braces
+// within JSON strings do not split spans; candidates that are not valid JSON
+// simply fail decodeDraft and fall through.
+func jsonObjectCandidates(s string) []string {
+	var spans []string
+	depth, start := 0, -1
+	inStr, esc := false, false
+	for i, r := range s {
+		if inStr {
+			switch {
+			case esc:
+				esc = false
+			case r == '\\':
+				esc = true
+			case r == '"':
+				inStr = false
+			}
+			continue
+		}
+		switch r {
+		case '"':
+			if depth > 0 {
+				inStr = true
+			}
+		case '{':
+			if depth == 0 {
+				start = i
+			}
+			depth++
+		case '}':
+			if depth > 0 {
+				depth--
+				if depth == 0 && start >= 0 {
+					spans = append(spans, s[start:i+1])
+					start = -1
+				}
+			}
+		}
+	}
+	for l, r := 0, len(spans)-1; l < r; l, r = l+1, r-1 {
+		spans[l], spans[r] = spans[r], spans[l]
+	}
+	return spans
 }
 
 // requiredCapabilities merges what the model declared with what its own
