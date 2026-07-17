@@ -9,10 +9,6 @@ import (
 	"io"
 )
 
-func cmdDoctor(_ []string, _, _ io.Writer) error {
-	return fmt.Errorf("bob-eino doctor: not implemented yet in this build")
-}
-
 func cmdPlan(_ []string, _ io.Reader, _, _ io.Writer) error {
 	return fmt.Errorf("bob-eino plan: not implemented yet in this build")
 }

@@ -152,6 +152,17 @@ func KeyEnv(providerName string) (envVar string, known bool) {
 	return entry.keyEnv, true
 }
 
+// BaseURL returns the registry endpoint for a provider ("" for providers the
+// SDK defaults, e.g. openai) and whether the provider is known. Doctor uses
+// it to derive the reachability target without needing a credential.
+func BaseURL(providerName string) (baseURL string, known bool) {
+	entry, ok := Registry[strings.ToLower(providerName)]
+	if !ok {
+		return "", false
+	}
+	return entry.baseURL, true
+}
+
 // FromConfig builds a resolved Config from already-merged configuration
 // values (the subcommand path — internal/config owns the precedence merge).
 // Resolve remains the selector-string path used only by the flat one-shot
