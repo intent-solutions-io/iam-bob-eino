@@ -37,6 +37,12 @@ type ToolRef struct {
 // Record is a single content-safe execution-evidence entry. Field names mirror
 // the MC projected-record contract so records project without transformation.
 type Record struct {
+	// SchemaVersion identifies the record contract that wrote this record
+	// (version.EvidenceSchemaVersion, stamped by the governor). omitempty is
+	// load-bearing: legacy records lack the field, and an absent field must
+	// re-marshal to the exact bytes their chains originally hashed.
+	SchemaVersion string `json:"schema_version,omitempty"`
+
 	ActionID      string   `json:"action_id"`
 	CorrelationID string   `json:"correlation_id"`
 	Timestamp     string   `json:"timestamp"`

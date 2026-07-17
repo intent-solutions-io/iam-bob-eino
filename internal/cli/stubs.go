@@ -9,10 +9,6 @@ import (
 	"io"
 )
 
-func cmdRun(_ []string, _ io.Reader, _, _ io.Writer) error {
-	return fmt.Errorf("bob-eino run: not implemented yet in this build")
-}
-
 func cmdVerify(_ []string, _, _ io.Writer) error {
 	return fmt.Errorf("bob-eino verify: not implemented yet in this build")
 }

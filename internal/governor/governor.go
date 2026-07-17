@@ -133,6 +133,7 @@ func (g *Governor) Begin(spec ActionSpec) *Ticket {
 	return &Ticket{
 		g: g,
 		rec: evidence.Record{
+			SchemaVersion: version.EvidenceSchemaVersion,
 			ActionID:      newID(),
 			CorrelationID: g.Corr,
 			Timestamp:     evidence.Now(),
