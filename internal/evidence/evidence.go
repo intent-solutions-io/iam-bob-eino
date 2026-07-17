@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -96,13 +97,47 @@ type JSONLSink struct {
 	last string // hash of the previous record, for chaining
 }
 
-// NewJSONLSink opens (creating if needed) an append-only evidence log at path.
+// NewJSONLSink opens (creating if needed) an append-only evidence log at
+// path. When the log already has records, the hash chain RESUMES from the
+// last record on disk — one file is one continuous chain across every
+// process that ever appended to it, so whole-file verification holds over
+// plan and run sessions alike.
 func NewJSONLSink(path string) (*JSONLSink, error) {
+	last, err := lastRecordHash(path)
+	if err != nil {
+		return nil, fmt.Errorf("read evidence log tail %q: %w", path, err)
+	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("open evidence log %q: %w", path, err)
 	}
-	return &JSONLSink{file: f}, nil
+	return &JSONLSink{file: f, last: last}, nil
+}
+
+// lastRecordHash returns the RecordHash of the final record in an existing
+// log ("" for a missing or empty file). A malformed tail is an error — a
+// sink must never silently fork the chain of a corrupt log.
+func lastRecordHash(path string) (string, error) {
+	raw, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	lines := strings.Split(string(raw), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		var rec Record
+		if uerr := json.Unmarshal([]byte(line), &rec); uerr != nil {
+			return "", fmt.Errorf("malformed final record: %w", uerr)
+		}
+		return rec.RecordHash, nil
+	}
+	return "", nil
 }
 
 // Write appends one redacted, hash-chained record as a JSON line and fsyncs so
@@ -179,10 +214,17 @@ func chain(rec Record, prev string) Record {
 	return rec
 }
 
-// VerifyChain checks that a slice of records forms an intact hash chain.
-// It returns the index of the first broken record, or -1 if the chain is valid.
+// VerifyChain checks that a slice of records forms an intact hash chain,
+// returning the index of the first broken record or -1 when valid. The chain
+// is seeded from the first record's own PrevHash, so both a whole log (whose
+// first record carries "") and a contiguous mid-log segment (e.g. one run's
+// records filtered from a multi-session file) verify; every subsequent link
+// must still bind exactly to its predecessor.
 func VerifyChain(records []Record) int {
 	prev := ""
+	if len(records) > 0 {
+		prev = records[0].PrevHash
+	}
 	for i, rec := range records {
 		want := rec.RecordHash
 		if chain(rec, prev).RecordHash != want || rec.PrevHash != prev {
