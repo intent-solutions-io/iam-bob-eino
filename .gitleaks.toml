@@ -1,0 +1,33 @@
+# gitleaks configuration — keeps ALL default rules and allowlists ONLY the
+# synthetic, credential-SHAPED canary values used by the redaction test suite
+# (internal/evidence redaction tests, the doctor key-material-never-printed
+# tests). These strings exist precisely to prove that secrets get scrubbed
+# from evidence, traces, and doctor output; they are not credentials.
+#
+# Deliberately NOT a blanket *_test.go path exemption: a real secret pasted
+# into a test file must still fail the scan. Add new canaries here by exact
+# value, with a comment naming the test that uses them.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Synthetic redaction-test canaries (exact values only)"
+# Match against the whole source line, because for key=value rules the
+# captured "secret" is the bare value and would not carry the key context.
+regexTarget = "line"
+regexes = [
+  # TestRedactScrubsSecrets (internal/evidence/evidence_test.go)
+  '''sk-abcdef0123456789ABCDEF''',
+  '''ghp_0123456789abcdef0123456789abcdef0000''',
+  # TestMemorySinkRedactsOnWrite (internal/evidence/evidence_test.go)
+  '''token=abcdef123456''',
+  # TestRedactScrubsSecrets / receipt TestRedact generic key=value cases
+  '''token=supersecretvalue123''',
+  # receipt TestRedact canaries (internal/receipt/receipt_test.go)
+  '''sk-canary1234567890abcdef''',
+  '''Bearer abcdefghijklmnopqrstuvwxyz123456''',
+  # Doctor key-material-never-printed sentinels (internal/doctor, internal/cli)
+  '''sk-SENTINEL-NEVER-PRINT-12345''',
+  '''sk-supersecret-sentinel''',
+]

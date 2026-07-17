@@ -64,6 +64,26 @@ between kebab segments.
 Provider-native variables (`DEEPSEEK_API_KEY`, `MINIMAX_*`, …) are NOT part of this namespace
 and are unchanged.
 
+### 4.1 Recorded deviations from the original naming brief (2026-07-16 audit)
+
+The 2026-07-16 identity-contract compliance audit confirmed two deliberate deviations from the
+originating brief; they are RECORDED here as repository-local decisions:
+
+1. **Full configuration precedence** (all sources, not just model selection):
+   `CLI flag → INTENT_BOB_EINO_* → BOB_* (legacy, warned) → provider-native (MINIMAX_*, gated
+   to the effective provider) → config file → seeded defaults`. The brief ordered
+   provider-native ABOVE legacy `BOB_*`; this repo deliberately inverts that pair because a
+   legacy `BOB_*` variable is an explicit, runtime-addressed operator instruction to THIS
+   agent, while `MINIMAX_*` is ambient provider environment that may be set for unrelated
+   tooling — explicit-to-Bob must outrank ambient. Test-pinned by `TestPrecedenceChain`
+   ("BOB_MODEL beats provider env and file").
+2. **Telemetry attribute deltas**: `service.namespace` is `intent-solutions` (the estate-wide
+   namespace used by every Intent Solutions service — the brief's `intent-solutions.agents`
+   would fork the estate convention); the instance lands under OpenTelemetry's own
+   `service.instance.id` semantic key rather than a bespoke `intent.agent.instance_id`; the
+   implementation attribute is abbreviated `intent.agent.impl_id`; and `intent.agent.run_id`
+   is emitted only on run-bound identities (`WithRun`), never on instance-level ones.
+
 ## 5. Prohibitions
 
 - Never use bare `bob` as: binary name, service/container/systemd unit name, telemetry

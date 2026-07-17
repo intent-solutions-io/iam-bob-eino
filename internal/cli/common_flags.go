@@ -137,11 +137,14 @@ func openEvidenceSink(cfg config.Config, stderr io.Writer) (*evidence.JSONLSink,
 	return sink, path, nil
 }
 
-// evidenceLogPath resolves the evidence log path WITHOUT opening a sink, for
-// read-only commands (verify, evidence).
-func evidenceLogPath(cfg config.Config, stderr io.Writer) (string, error) {
-	if cfg.EvidenceDir != "" {
-		return filepath.Join(cfg.EvidenceDir, "evidence.jsonl"), nil
+// readEvidencePath resolves the evidence log path for the read-only commands
+// (verify, evidence): an explicit -evidence-dir wins; otherwise the canonical
+// path WITH legacy discovery (ResolveEvidencePath hash-verifies and copies an
+// intact legacy log, idempotently and non-destructively), so a legacy-only
+// user can inspect their evidence before ever running plan/run.
+func readEvidencePath(evDir string, stderr io.Writer) (string, error) {
+	if evDir != "" {
+		return filepath.Join(evDir, "evidence.jsonl"), nil
 	}
 	return ResolveEvidencePath(stderr)
 }

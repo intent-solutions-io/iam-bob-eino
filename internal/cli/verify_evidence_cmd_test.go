@@ -9,7 +9,25 @@ import (
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/intent-solutions-io/iam-bob-eino/internal/evidence"
 )
+
+// evidenceSinkAt writes two chained records with a recognizable correlation
+// id to path and returns the sink for closing.
+func evidenceSinkAt(path string) (*evidence.JSONLSink, error) {
+	sink, err := evidence.NewJSONLSink(path)
+	if err != nil {
+		return nil, err
+	}
+	for i := 0; i < 2; i++ {
+		if err := sink.Write(evidence.Record{ActionID: "a", CorrelationID: "legacy-only-run"}); err != nil {
+			sink.Close()
+			return nil, err
+		}
+	}
+	return sink, nil
+}
 
 // runVerifiedLifecycle executes a happy-path run (as in run_cmd_test) and
 // returns the run id.
@@ -189,6 +207,41 @@ func TestEvidenceVerifyChainReportsMalformedLineNumber(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "line") {
 		t.Errorf("stderr must carry the line number:\n%s", stderr.String())
+	}
+}
+
+// TestEvidenceCommandsDiscoverLegacyOnlyLog: a user whose only evidence
+// lives at the legacy state path must be able to run the read-only commands
+// BEFORE any plan/run — legacy discovery (hash-verified, non-destructive
+// copy) must fire on the read path too.
+func TestEvidenceCommandsDiscoverLegacyOnlyLog(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	legacyDir := LegacyStateDir()
+	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacyPath := filepath.Join(legacyDir, "evidence.jsonl")
+	sink, err := evidenceSinkAt(legacyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink.Close()
+
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"evidence", "list"}, strings.NewReader(""), &stdout, &stderr); code != 0 {
+		t.Fatalf("evidence list on a legacy-only log exit = %d\n%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "legacy-only-run") {
+		t.Fatalf("legacy-only records not discovered:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
+	}
+	// Non-destructive: the legacy file must still exist untouched.
+	if _, err := os.Stat(legacyPath); err != nil {
+		t.Fatalf("legacy log was moved or deleted: %v", err)
+	}
+	// And the chain must verify through the same discovery path.
+	var so2, se2 bytes.Buffer
+	if code := Run([]string{"evidence", "verify-chain"}, strings.NewReader(""), &so2, &se2); code != 0 {
+		t.Fatalf("verify-chain on discovered legacy log exit = %d\n%s", code, se2.String())
 	}
 }
 
