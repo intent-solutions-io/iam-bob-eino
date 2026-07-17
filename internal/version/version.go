@@ -7,6 +7,11 @@
 // the flat string constants older call sites consume.
 package version
 
+import (
+	"runtime"
+	"runtime/debug"
+)
+
 // These values identify the agent and the underlying Eino engine in every
 // evidence record. Engine is pinned to the Eino module version this binary is
 // built against (see go.mod); bump both together on dependency upgrades.
@@ -39,3 +44,32 @@ const (
 	// parse and self-verify.
 	EvidenceSchemaVersion = "intent-bob-eino-evidence/v2"
 )
+
+// Build metadata injected at link time via -ldflags -X (see the Makefile's
+// build target). These are vars, not consts, precisely so the linker can set
+// them; a plain `go build` leaves the honest default "unknown" rather than a
+// fabricated commit.
+var (
+	// BuildCommit is the git commit the binary was built from.
+	BuildCommit = "unknown"
+	// BuildDate is the commit date (ISO 8601) of BuildCommit — the commit
+	// date, not the wall clock, so rebuilding the same commit is reproducible.
+	BuildDate = "unknown"
+)
+
+// GoVersion reports the Go toolchain the binary was compiled with.
+func GoVersion() string { return runtime.Version() }
+
+// EinoVersion reports the Eino module version actually linked into the
+// binary, read from build info. It falls back to the pinned EngineVersion
+// constant when build info is unavailable (e.g. some test binaries).
+func EinoVersion() string {
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		for _, dep := range bi.Deps {
+			if dep.Path == "github.com/cloudwego/eino" {
+				return dep.Version
+			}
+		}
+	}
+	return EngineVersion
+}

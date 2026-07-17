@@ -65,6 +65,12 @@ type Policy struct {
 	Version string `json:"version"`
 	// AllowWrites gates whether R3 (write) actions may proceed. Default false.
 	AllowWrites bool `json:"allow_writes"`
+	// AllowExec gates whether R2 (command execution) actions may proceed.
+	// Default false. This is a SEPARATE capability from writes and from
+	// approval: --yes auto-approves prompts but must never set AllowExec, so
+	// --yes alone can neither write nor execute. Execution does not imply
+	// writes and writes do not imply execution.
+	AllowExec bool `json:"allow_exec"`
 	// AllowedCommands is the exact allowlist of command names R2 tools may run.
 	AllowedCommands []string `json:"allowed_commands"`
 }
@@ -113,6 +119,9 @@ func (p Policy) Evaluate(risk RiskClass) Decision {
 	case R0, R1:
 		return Decision{Allowed: true, RequiresApproval: false, Reason: "read-only action permitted"}
 	case R2:
+		if !p.AllowExec {
+			return Decision{Allowed: false, RequiresApproval: false, Reason: "command execution is disabled by policy (enable with --allow-exec)"}
+		}
 		return Decision{Allowed: true, RequiresApproval: true, Reason: "execution requires approval"}
 	case R3:
 		if !p.AllowWrites {

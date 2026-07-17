@@ -24,6 +24,11 @@ func newGov(t *testing.T, root string, allowWrites bool, appr approval.Approver)
 	}
 	pol := policy.Default()
 	pol.AllowWrites = allowWrites
+	// This general tool-exercise helper enables command execution so the
+	// run_command path can be tested; the capability-restriction behavior
+	// (exec/write denied by default, --yes granting nothing) is covered by the
+	// dedicated policy and capability tests that build policies explicitly.
+	pol.AllowExec = true
 	sink := &evidence.MemorySink{}
 	return governor.New(ws, pol, appr, sink), sink
 }

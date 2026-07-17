@@ -14,12 +14,39 @@ import (
 	"github.com/intent-solutions-io/iam-bob-eino/internal/approval"
 	"github.com/intent-solutions-io/iam-bob-eino/internal/evidence"
 	"github.com/intent-solutions-io/iam-bob-eino/internal/identity"
+	"github.com/intent-solutions-io/iam-bob-eino/internal/limits"
 	"github.com/intent-solutions-io/iam-bob-eino/internal/policy"
 	"github.com/intent-solutions-io/iam-bob-eino/internal/seams"
 	"github.com/intent-solutions-io/iam-bob-eino/internal/verify"
 	"github.com/intent-solutions-io/iam-bob-eino/internal/version"
 	"github.com/intent-solutions-io/iam-bob-eino/internal/workspace"
 )
+
+// GuardOutcome is a pre-approval Guard's ruling on one action.
+type GuardOutcome int
+
+// Guard outcomes. approval_required escalates an otherwise pre-authorized
+// action to an explicit VARIANCE approval; denied and plan_invalidated stop
+// it outright.
+const (
+	GuardAllow GuardOutcome = iota
+	GuardApprovalRequired
+	GuardDenied
+	GuardPlanInvalidated
+)
+
+// GuardDecision carries a guard outcome plus a content-safe reason.
+type GuardDecision struct {
+	Outcome GuardOutcome
+	Reason  string
+}
+
+// Guard is the pre-approval plan hook: it runs AFTER policy and BEFORE
+// approval, so it can escalate an in-policy action to a variance approval —
+// something the post-approval execution seam structurally cannot express.
+type Guard interface {
+	Check(spec ActionSpec) GuardDecision
+}
 
 // Governor holds the shared governance context injected into every tool.
 type Governor struct {
@@ -29,6 +56,8 @@ type Governor struct {
 	Sink     evidence.Sink
 	Exec     seams.ExecutionSeam
 	Project  seams.EvidenceProjector
+	Guard    Guard           // optional plan-variance hook; nil = no plan in force
+	Limits   *limits.Tracker // optional per-run usage bounds; nil = unbounded
 	Env      string
 	Corr     string // correlation id shared by all actions in one run
 
@@ -72,6 +101,11 @@ type ActionSpec struct {
 	Asset   string
 	Summary string
 	RawArgs string // used only to compute a content-safe args hash
+
+	// Assets optionally lists every touched asset individually (e.g. each
+	// file of a multi-file patch) for guards that must judge per path;
+	// Asset remains the single display/evidence subject.
+	Assets []string
 }
 
 // Gate is the authorization outcome returned to the calling tool.
@@ -99,6 +133,7 @@ func (g *Governor) Begin(spec ActionSpec) *Ticket {
 	return &Ticket{
 		g: g,
 		rec: evidence.Record{
+			SchemaVersion: version.EvidenceSchemaVersion,
 			ActionID:      newID(),
 			CorrelationID: g.Corr,
 			Timestamp:     evidence.Now(),
@@ -117,16 +152,41 @@ func (g *Governor) Begin(spec ActionSpec) *Ticket {
 	}
 }
 
-// Authorize runs the policy boundary, then (if required) the approval boundary,
-// then the AGP execution seam. It records the authorization outcome on the
-// ticket and returns whether the action may proceed.
+// Authorize runs the boundaries in fixed order: limits → policy → guard
+// (plan variance) → approval → the AGP execution seam. It records the
+// authorization outcome on the ticket and returns whether the action may
+// proceed.
 func (t *Ticket) Authorize(ctx context.Context, spec ActionSpec) Gate {
+	// Usage bounds first: an exhausted run refuses every further action (the
+	// denied evidence record is still emitted by the calling tool) and the
+	// tracker has already cancelled the run context with the typed cause.
+	if t.g.Limits != nil {
+		if lerr := t.g.Limits.OnBegin(spec.Tool, t.rec.ArgsHash); lerr != nil {
+			t.rec.Authorization = "denied"
+			return Gate{Allowed: false, Reason: lerr.Error()}
+		}
+	}
 	dec := t.g.Policy.Evaluate(spec.Risk)
 	if !dec.Allowed {
 		t.rec.Authorization = "denied"
 		return Gate{Allowed: false, Reason: dec.Reason}
 	}
-	if dec.RequiresApproval {
+	requiresApproval := dec.RequiresApproval
+	variance := false
+	if t.g.Guard != nil {
+		switch gd := t.g.Guard.Check(spec); gd.Outcome {
+		case GuardDenied:
+			t.rec.Authorization = "denied"
+			return Gate{Allowed: false, Reason: "plan guard denied: " + gd.Reason}
+		case GuardPlanInvalidated:
+			t.rec.Authorization = "denied"
+			return Gate{Allowed: false, Reason: "plan invalidated: " + gd.Reason}
+		case GuardApprovalRequired:
+			requiresApproval = true
+			variance = true
+		}
+	}
+	if requiresApproval {
 		summary := spec.Summary
 		if summary == "" {
 			summary = fmt.Sprintf("%s on %s", spec.Tool, spec.Asset)
@@ -136,6 +196,7 @@ func (t *Ticket) Authorize(ctx context.Context, spec ActionSpec) Gate {
 			Tool:     spec.Tool,
 			Risk:     spec.Risk,
 			Summary:  summary,
+			Variance: variance,
 		})
 		if !ad.Approved {
 			t.rec.Authorization = "denied"
@@ -217,6 +278,9 @@ func (t *Ticket) emit(ctx context.Context) {
 	t.emitted = true
 	_ = t.g.Sink.Write(t.rec)
 	_ = t.g.Project.Project(ctx, t.rec)
+	if t.g.Limits != nil {
+		t.g.Limits.OnFinish(t.rec.Execution)
+	}
 }
 
 // newID returns a short random hex identifier for actions and correlations. On

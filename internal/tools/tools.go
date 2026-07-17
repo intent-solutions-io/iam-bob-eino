@@ -39,11 +39,21 @@ const (
 	commandTimeout   = 60 * time.Second
 )
 
-// All builds the full set of governed tools bound to a governor.
+// All builds the full set of governed tools bound to a governor. apply_patch
+// lives ONLY here — planning's ReadOnly set never constructs it.
 func All(g *governor.Governor) ([]tool.BaseTool, error) {
-	builders := []func(*governor.Governor) (tool.InvokableTool, error){
-		newReadFile, newListDir, newSearchCode, newRunCommand, newWriteFile,
-	}
+	return build(g, newReadFile, newListDir, newSearchCode, newRunCommand, newWriteFile, newApplyPatch)
+}
+
+// ReadOnly builds only the read-only tool set (read_file, list_dir,
+// search_code) for planning mode. The write/exec/patch builders are never
+// constructed here, so a planning agent is read-only by construction — there
+// is no disabled-but-present mutation tool for a model to talk its way into.
+func ReadOnly(g *governor.Governor) ([]tool.BaseTool, error) {
+	return build(g, newReadFile, newListDir, newSearchCode)
+}
+
+func build(g *governor.Governor, builders ...func(*governor.Governor) (tool.InvokableTool, error)) ([]tool.BaseTool, error) {
 	out := make([]tool.BaseTool, 0, len(builders))
 	for _, b := range builders {
 		t, err := b(g)
@@ -395,19 +405,41 @@ func neutralizedEnv() []string {
 }
 
 // dangerousFlags are argument tokens that let an allowlisted program run
-// arbitrary code via configuration (e.g. git -c core.pager=...).
+// arbitrary code via configuration or a spawned helper (e.g. git -c
+// core.pager=..., git --exec-path=/evil, go test -exec /evil, go build
+// -toolexec /evil). The match is on the flag NAME only, so both the separate
+// form ("--config" "x") and the equals form ("--config=x") are caught.
 var dangerousFlags = map[string]bool{
+	// git config / helper-path / receive-pack vectors
 	"-c": true, "--config": true, "-C": true, "--exec-path": true,
 	"--upload-pack": true, "--receive-pack": true, "-o": true,
+	"--config-env": true, "--work-tree": true, "--git-dir": true,
+	// go toolchain program-spawning flags
+	"-exec": true, "-toolexec": true, "-ldflags": true, "-gcflags": true,
+	"-asmflags": true, "-overlay": true,
 }
 
 func checkDangerousFlags(argv []string) error {
 	for _, a := range argv[1:] {
-		if dangerousFlags[a] {
+		// Normalize the equals form ("--flag=value") to the flag name so the
+		// value cannot smuggle a dangerous flag past an exact-token check.
+		name := a
+		if i := strings.IndexByte(a, '='); i >= 0 {
+			name = a[:i]
+		}
+		if dangerousFlags[name] {
 			return fmt.Errorf("argument %q is not allowed (arbitrary-exec vector)", a)
 		}
 	}
 	return nil
+}
+
+// isDotGitPath reports whether a workspace-relative path targets the .git
+// directory. Writing into .git (hooks, config) is an execution/tamper vector,
+// so writes and patches refuse it even when writes are enabled.
+func isDotGitPath(rel string) bool {
+	clean := filepath.ToSlash(filepath.Clean(rel))
+	return clean == ".git" || strings.HasPrefix(clean, ".git/")
 }
 
 // shellMeta is the set of shell control characters rejected before execution.
@@ -458,6 +490,10 @@ func newWriteFile(g *governor.Governor) (tool.InvokableTool, error) {
 			if isSecretPath(in.Path) {
 				t.FinishDenied(ctx, "refused: looks like a secret file")
 				return "DENIED: refusing to write a likely secret file", nil
+			}
+			if isDotGitPath(in.Path) {
+				t.FinishDenied(ctx, "refused: writing into .git is not allowed")
+				return "DENIED: refusing to write into the .git directory", nil
 			}
 			if len(in.Content) > maxWriteBytes {
 				t.FinishDenied(ctx, "content exceeds size limit")

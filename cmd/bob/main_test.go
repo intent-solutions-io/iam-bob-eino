@@ -103,6 +103,12 @@ func TestUsageErrorSurfacesOnBoth(t *testing.T) {
 		if !strings.Contains(stderr, "usage") {
 			t.Errorf("%s stderr = %q, want usage", name, stderr)
 		}
+		// The usage now advertises the subcommand surface.
+		for _, cmdWord := range []string{"plan", "run", "verify", "evidence", "doctor", "version"} {
+			if !strings.Contains(stderr, cmdWord) {
+				t.Errorf("%s usage missing subcommand %q:\n%s", name, cmdWord, stderr)
+			}
+		}
 		if stdout != "" {
 			t.Errorf("%s stdout must stay clean on error, got %q", name, stdout)
 		}

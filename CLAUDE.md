@@ -54,14 +54,33 @@ The test suite needs no network (offline model stub in `internal/provider/fake.g
 ## Package map
 
 `cmd/bob-eino` canonical CLI + `cmd/bob` legacy alias (both thin wrappers) ·
-`internal/cli` (the single CLI implementation + state paths) · `internal/identity`
-(structured machine identity — single creation path) · `internal/agent` (Eino
-wiring + persona) · `internal/provider` (BYOK model + offline stub) ·
-`internal/governor` (control point) · `internal/policy` (R0–R4) ·
-`internal/approval` · `internal/tools` (governed tools) · `internal/verify` ·
-`internal/evidence` (MC-projectable, hash-chained, carries `agent_identity`) ·
-`internal/workspace` (os.Root confinement) · `internal/seams` (BigBrain / AGP /
-Mission Control interfaces).
+`internal/cli` (subcommand dispatch version/doctor/plan/run/verify/evidence +
+deprecated flat fallback + state paths; `plans/` and `receipts/` live under the
+state dir) · `internal/config` (typed config, `INTENT_BOB_EINO_*`, precedence
+merge) · `internal/identity` (structured machine identity — single creation
+path) · `internal/version` (build identity + ldflags commit/date) ·
+`internal/agent` (Eino wiring + persona) · `internal/provider` (BYOK model,
+MiniMax-first; `FromConfig` for merged config, `Resolve` for the flat selector;
+offline stub `fake.go`) · `internal/governor` (control point: limits → policy →
+plan guard → approval → seam → evidence) · `internal/policy` (R0–R4,
+AllowWrites/AllowExec) · `internal/approval` (variance-aware; AutoApprove
+refuses out-of-plan actions) · `internal/plan` (hashed plan artifacts) ·
+`internal/planguard` (plan-variance guard + HEAD invalidation) ·
+`internal/limits` (per-run usage bounds, typed cancel causes) ·
+`internal/patch` (intent-bob-eino-patch/v1, two-phase atomic) ·
+`internal/gitstate` (read-only git state, clean degradation) · `internal/tools`
+(governed tools incl. `apply_patch`; `ReadOnly` planning set never constructs
+mutation tools) · `internal/verify` (per-action verification) ·
+`internal/runverify` (model-free run verifier) · `internal/receipt` (sealed run
+receipts + evidence-log loader) · `internal/doctor` (preflight checks) ·
+`internal/evidence` (MC-projectable, session-spanning hash chain, carries
+`agent_identity` + `schema_version`) · `internal/workspace` (os.Root
+confinement) · `internal/seams` (BigBrain / AGP / Mission Control interfaces).
+
+CLI surface + migration guidance: `000-docs/009-DR-GUID-cli-subcommands-and-migration.md`.
+The live MiniMax smoke is double-gated (`INTENT_BOB_EINO_LIVE_SMOKE=1` +
+`MINIMAX_API_KEY`; `scripts/live-smoke.sh`) and NEVER runs in CI — do not arm it
+from any workflow.
 
 ## Deferred / do not guess
 

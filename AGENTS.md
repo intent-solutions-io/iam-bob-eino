@@ -32,16 +32,33 @@ structured (see the table in `README.md` § Naming):
 7. **Both CLI entry points stay thin** — behavior lives in `internal/cli`; `cmd/bob` adds only
    the one-line deprecation warning.
 
+## CLI surface (task lifecycle)
+
+`bob-eino version | doctor | plan | run | verify | evidence` — the governed
+plan → run → verify lifecycle; the flat one-shot form is a deprecated fallback
+(`bob-eino -- <task>` forces it). Full map + migration:
+`000-docs/009-DR-GUID-cli-subcommands-and-migration.md`. Key invariants:
+
+- Planning is read-only **by construction** (`tools.ReadOnly` never constructs
+  mutation tools); a plan is `local_untrusted` advisory input, never approval.
+- `run` enforces the plan through the governor's variance guard; `-yes`
+  auto-approves in-plan actions only and structurally refuses variance.
+- Abnormal ends are typed (`limit_exhausted:* | plan_invalidated | timeout |
+  max_steps_exhausted | provider_error`) — never claimed successes.
+- The live MiniMax smoke is double-gated (`INTENT_BOB_EINO_LIVE_SMOKE=1` +
+  `MINIMAX_API_KEY`, `scripts/live-smoke.sh`) and must never be armed in CI.
+
 ## Build & test
 
 ```bash
 make ci            # fmtcheck + vet + test — the required gate
-make build         # canonical bob-eino
+make build         # canonical bob-eino (ldflags build metadata)
 make build-legacy  # legacy alias bob
 go test -race ./...
 ```
 
-The suite needs no network (offline model stub in `internal/provider/fake.go`).
+The suite needs no network (offline model stub in `internal/provider/fake.go`;
+the live smoke self-skips without its gate).
 
 ## Task tracking
 
