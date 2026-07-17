@@ -110,9 +110,14 @@ func cmdPlan(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	fmt.Fprintf(stderr, "%s plan: workspace=%s model=%s/%s tools=read-only evidence=%s\n",
 		version.Component, ws.Root(), cfg.Provider, cfg.Model, evPath)
 
-	answer, err := agent.Run(ctx, ag, planningPrompt(task), stderr)
+	answer, tokenUsage, err := agent.Run(ctx, ag, planningPrompt(task), stderr)
 	if err != nil {
 		return fmt.Errorf("planning run: %w", err)
+	}
+	if tokenUsage.Turns > 0 {
+		fmt.Fprintf(stderr, "%s plan: usage prompt=%d completion=%d total=%d cached=%d turns=%d\n",
+			version.Component, tokenUsage.PromptTokens, tokenUsage.CompletionTokens,
+			tokenUsage.TotalTokens, tokenUsage.CachedTokens, tokenUsage.Turns)
 	}
 
 	draft, err := parsePlanDraft(answer)

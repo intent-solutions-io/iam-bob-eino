@@ -47,20 +47,51 @@ func New(ctx context.Context, cfg Config) (*adk.ChatModelAgent, error) {
 	})
 }
 
+// Usage is the accumulated provider token accounting for one agent run,
+// summed over every model turn that reported usage. All zeros (Turns == 0)
+// means the provider surfaced nothing — callers must record absence, never
+// fabricate.
+type Usage struct {
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
+	CachedTokens     int
+	ReasoningTokens  int
+	// Turns counts the model responses that actually carried usage metadata.
+	Turns int
+}
+
+// add folds one turn's reported usage into the run total.
+func (u *Usage) add(t *schema.TokenUsage) {
+	if t == nil {
+		return
+	}
+	u.PromptTokens += t.PromptTokens
+	u.CompletionTokens += t.CompletionTokens
+	u.TotalTokens += t.TotalTokens
+	u.CachedTokens += t.PromptTokenDetails.CachedTokens
+	u.ReasoningTokens += t.CompletionTokensDetails.ReasoningTokens
+	u.Turns++
+}
+
 // Run executes a single task through the agent, streaming a human-readable
-// trace of tool calls and answers to trace, and returns Bob's final answer.
-func Run(ctx context.Context, ag *adk.ChatModelAgent, task string, trace io.Writer) (string, error) {
+// trace of tool calls and answers to trace, and returns Bob's final answer
+// plus the accumulated provider token usage (every assistant turn carries
+// ResponseMeta.Usage through the OpenAI-compatible boundary; dropping it was
+// the root cause of empty receipt usage — found in the v0.1.0-rc.1 soak).
+func Run(ctx context.Context, ag *adk.ChatModelAgent, task string, trace io.Writer) (string, Usage, error) {
 	runner := adk.NewRunner(ctx, adk.RunnerConfig{Agent: ag})
 	iter := runner.Query(ctx, task)
 
 	var final strings.Builder
+	var usage Usage
 	for {
 		event, ok := iter.Next()
 		if !ok {
 			break
 		}
 		if event.Err != nil {
-			return final.String(), fmt.Errorf("agent run: %w", event.Err)
+			return final.String(), usage, fmt.Errorf("agent run: %w", event.Err)
 		}
 		out := event.Output
 		if out == nil || out.MessageOutput == nil {
@@ -70,10 +101,13 @@ func Run(ctx context.Context, ag *adk.ChatModelAgent, task string, trace io.Writ
 		// stays correct if EnableStreaming is turned on later.
 		msg, gerr := out.MessageOutput.GetMessage()
 		if gerr != nil {
-			return final.String(), fmt.Errorf("agent event: %w", gerr)
+			return final.String(), usage, fmt.Errorf("agent event: %w", gerr)
 		}
 		if msg == nil {
 			continue
+		}
+		if msg.Role == schema.Assistant && msg.ResponseMeta != nil {
+			usage.add(msg.ResponseMeta.Usage)
 		}
 		switch {
 		case len(msg.ToolCalls) > 0:
@@ -90,7 +124,7 @@ func Run(ctx context.Context, ag *adk.ChatModelAgent, task string, trace io.Writ
 			final.WriteString(msg.Content)
 		}
 	}
-	return final.String(), nil
+	return final.String(), usage, nil
 }
 
 // oneLine collapses a multi-line string to a single trimmed, redacted line for

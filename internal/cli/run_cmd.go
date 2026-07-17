@@ -136,8 +136,13 @@ func cmdRun(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	fmt.Fprintf(stderr, "%s run: plan=%s run=%s workspace=%s model=%s/%s writes=%v exec=%v evidence=%s\n",
 		version.Component, p.PlanID, gov.ID.RunID, ws.Root(), cfg.Provider, cfg.Model, cfg.AllowWrites, cfg.AllowExec, evPath)
 
-	answer, runErr := agent.Run(ctx, ag, runPrompt(p), stderr)
+	answer, tokenUsage, runErr := agent.Run(ctx, ag, runPrompt(p), stderr)
 	status := classifyRunOutcome(ctx, runErr, tracker)
+	if tokenUsage.Turns > 0 {
+		fmt.Fprintf(stderr, "%s run: usage prompt=%d completion=%d total=%d cached=%d turns=%d\n",
+			version.Component, tokenUsage.PromptTokens, tokenUsage.CompletionTokens,
+			tokenUsage.TotalTokens, tokenUsage.CachedTokens, tokenUsage.Turns)
+	}
 
 	// --- Post-run observation (never trusted claims).
 	var endSHA string
@@ -208,6 +213,7 @@ func cmdRun(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		FinalStatus:            finalStatus,
 		StartedAt:              startedAt,
 		CompletedAt:            now().UTC().Format(time.RFC3339),
+		Usage:                  usageMap(tokenUsage),
 		Authority:              receipt.AuthorityLocalUntrusted,
 	}
 	sealed, err := receipt.Seal(rec)
@@ -391,6 +397,28 @@ func acceptanceStrings(acceptance map[string]int) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// usageMap projects the accumulated provider usage into the receipt's
+// free-form usage field. A run whose provider reported nothing gets nil —
+// absence is recorded as absence, never fabricated zeros.
+func usageMap(u agent.Usage) map[string]any {
+	if u.Turns == 0 {
+		return nil
+	}
+	m := map[string]any{
+		"prompt_tokens":     u.PromptTokens,
+		"completion_tokens": u.CompletionTokens,
+		"total_tokens":      u.TotalTokens,
+		"model_turns":       u.Turns,
+	}
+	if u.CachedTokens > 0 {
+		m["cached_tokens"] = u.CachedTokens
+	}
+	if u.ReasoningTokens > 0 {
+		m["reasoning_tokens"] = u.ReasoningTokens
+	}
+	return m
 }
 
 func grantedCapabilities(cfg config.Config) []string {

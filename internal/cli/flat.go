@@ -117,9 +117,13 @@ func runFlat(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	fmt.Fprintf(stderr, "%s: workspace=%s model=%s/%s writes=%v evidence=%s\n",
 		version.Component, ws.Root(), cfg.Provider, cfg.Model, pol.AllowWrites, evidencePath)
 
-	answer, err := agent.Run(ctx, ag, task, stderr)
+	answer, tokenUsage, err := agent.Run(ctx, ag, task, stderr)
 	if err != nil {
 		return err
+	}
+	if tokenUsage.Turns > 0 {
+		fmt.Fprintf(stderr, "%s: usage total=%d tokens over %d model turns\n",
+			version.Component, tokenUsage.TotalTokens, tokenUsage.Turns)
 	}
 
 	fmt.Fprintln(stdout, strings.TrimSpace(answer))

@@ -23,6 +23,9 @@ type FakeChatModel struct {
 	// BlockTurn, when > 0, makes the BlockTurn-th turn (1-based) block until
 	// the context is done and then return ctx.Err() — the timeout fixture.
 	BlockTurn int
+	// TurnUsage, when set, is stamped as each returned message's
+	// ResponseMeta.Usage — the provider-usage-accounting fixture.
+	TurnUsage *schema.TokenUsage
 
 	turn int
 }
@@ -45,10 +48,21 @@ func (f *FakeChatModel) Generate(ctx context.Context, _ []*schema.Message, _ ...
 	if err, ok := f.Errors[turn]; ok {
 		return nil, err
 	}
+	var msg *schema.Message
 	if turn >= len(f.Script) {
-		return schema.AssistantMessage("done", nil), nil
+		msg = schema.AssistantMessage("done", nil)
+	} else {
+		msg = f.Script[turn]
 	}
-	return f.Script[turn], nil
+	if f.TurnUsage != nil {
+		if msg.ResponseMeta == nil {
+			msg.ResponseMeta = &schema.ResponseMeta{}
+		}
+		if msg.ResponseMeta.Usage == nil {
+			msg.ResponseMeta.Usage = f.TurnUsage
+		}
+	}
+	return msg, nil
 }
 
 // Stream wraps Generate's result in a single-chunk stream.

@@ -14,6 +14,7 @@ import (
 
 	"github.com/intent-solutions-io/iam-bob-eino/internal/config"
 	"github.com/intent-solutions-io/iam-bob-eino/internal/plan"
+	"github.com/intent-solutions-io/iam-bob-eino/internal/provider"
 	"github.com/intent-solutions-io/iam-bob-eino/internal/receipt"
 )
 
@@ -115,6 +116,54 @@ func TestRunHappyPathSealsVerifiedReceipt(t *testing.T) {
 	}
 	if r.ToolCalls < 1 || len(r.CommandsRun) != 1 {
 		t.Errorf("evidence summary: calls=%d commands=%v", r.ToolCalls, r.CommandsRun)
+	}
+}
+
+// TestRunReceiptCarriesProviderUsage: the provider reports token usage on
+// every model turn (proven live against MiniMax); the sealed receipt must
+// carry the accumulated numbers. Root-cause regression for the empty-usage
+// defect found in the rc.1/rc.2 soaks (agent.Run dropped ResponseMeta).
+func TestRunReceiptCarriesProviderUsage(t *testing.T) {
+	ws := lifecycleEnv(t)
+	fixedClock(t)
+	planID := savePlan(t, minimalPlan(ws))
+	fixture := provider.NewFake(
+		schema.AssistantMessage("", []schema.ToolCall{{
+			ID: "call_1", Type: "function",
+			Function: schema.FunctionCall{Name: "run_command", Arguments: `{"command":"go version"}`},
+		}}),
+		schema.AssistantMessage("done", nil),
+	)
+	fixture.TurnUsage = &schema.TokenUsage{PromptTokens: 100, CompletionTokens: 20, TotalTokens: 120}
+	orig := modelFactory
+	modelFactory = func(context.Context, config.Config) (einomodel.ToolCallingChatModel, error) { return fixture, nil }
+	t.Cleanup(func() { modelFactory = orig })
+
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"run", "-plan", planID, "-workspace", ws, "-allow-writes", "-allow-exec", "-yes"},
+		strings.NewReader(""), &stdout, &stderr); code != 0 {
+		t.Fatalf("run exit = %d\n%s", code, stderr.String())
+	}
+	entries, err := os.ReadDir(ReceiptsDir())
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("receipts: %v/%d", err, len(entries))
+	}
+	r, err := receipt.Load(filepath.Join(ReceiptsDir(), entries[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Usage == nil {
+		t.Fatal("receipt usage is nil despite the provider reporting usage every turn")
+	}
+	// Two model turns × the fixture's per-turn usage.
+	if got := r.Usage["total_tokens"]; got != float64(240) && got != 240 {
+		t.Errorf("total_tokens = %v, want 240", got)
+	}
+	if got := r.Usage["model_turns"]; got != float64(2) && got != 2 {
+		t.Errorf("model_turns = %v, want 2", got)
+	}
+	if !strings.Contains(stderr.String(), "usage prompt=200 completion=40 total=240") {
+		t.Errorf("run stderr missing the usage summary:\n%s", stderr.String())
 	}
 }
 
