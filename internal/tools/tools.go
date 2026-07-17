@@ -41,9 +41,18 @@ const (
 
 // All builds the full set of governed tools bound to a governor.
 func All(g *governor.Governor) ([]tool.BaseTool, error) {
-	builders := []func(*governor.Governor) (tool.InvokableTool, error){
-		newReadFile, newListDir, newSearchCode, newRunCommand, newWriteFile,
-	}
+	return build(g, newReadFile, newListDir, newSearchCode, newRunCommand, newWriteFile)
+}
+
+// ReadOnly builds only the read-only tool set (read_file, list_dir,
+// search_code) for planning mode. The write/exec/patch builders are never
+// constructed here, so a planning agent is read-only by construction — there
+// is no disabled-but-present mutation tool for a model to talk its way into.
+func ReadOnly(g *governor.Governor) ([]tool.BaseTool, error) {
+	return build(g, newReadFile, newListDir, newSearchCode)
+}
+
+func build(g *governor.Governor, builders ...func(*governor.Governor) (tool.InvokableTool, error)) ([]tool.BaseTool, error) {
 	out := make([]tool.BaseTool, 0, len(builders))
 	for _, b := range builders {
 		t, err := b(g)
