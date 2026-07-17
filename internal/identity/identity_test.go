@@ -322,6 +322,16 @@ func TestResourceAttributesNeverBareBob(t *testing.T) {
 			t.Errorf("ResourceAttributes missing %q", k)
 		}
 	}
+	// A plain (instance-level) identity emits no run attribute; a run-bound
+	// identity emits exactly its run id.
+	if _, ok := attrs["intent.agent.run_id"]; ok {
+		t.Error("instance-level identity must not emit intent.agent.run_id")
+	}
+	withRun := valid().WithRun()
+	runAttrs := withRun.ResourceAttributes()
+	if runAttrs["intent.agent.run_id"] != withRun.RunID {
+		t.Errorf("run-bound identity: intent.agent.run_id = %q, want %q", runAttrs["intent.agent.run_id"], withRun.RunID)
+	}
 	// The only attribute allowed to carry bare "bob" is the persona id itself.
 	for k, v := range attrs {
 		if v == "bob" && k != "intent.agent.persona_id" {

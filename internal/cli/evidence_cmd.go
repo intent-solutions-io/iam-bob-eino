@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"path/filepath"
 
 	"github.com/intent-solutions-io/iam-bob-eino/internal/evidence"
 	"github.com/intent-solutions-io/iam-bob-eino/internal/receipt"
@@ -37,9 +36,9 @@ func cmdEvidence(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	evPath := filepath.Join(StateDir(), "evidence.jsonl")
-	if *evDir != "" {
-		evPath = filepath.Join(*evDir, "evidence.jsonl")
+	evPath, err := readEvidencePath(*evDir, stderr)
+	if err != nil {
+		return err
 	}
 
 	switch sub {

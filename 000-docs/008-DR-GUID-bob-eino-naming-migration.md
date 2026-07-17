@@ -40,6 +40,23 @@ Migration behavior (automatic, idempotent, non-destructive):
 
 The legacy file is never moved, edited, or deleted.
 
+### Manual legacy cleanup (operator-only, AFTER validation)
+
+The runtime never removes the legacy directory. When you want the disk back, validate first,
+then remove manually:
+
+1. Trigger discovery (any of `bob-eino evidence list`, `verify-chain`, `plan`, or `run`) so an
+   intact legacy log has been hash-verified and copied to the canonical path.
+2. Validate the canonical copy: `bob-eino evidence verify-chain` must report `chain intact`
+   on the canonical log, and `diff "$XDG_STATE_HOME/iam-bob-eino/evidence.jsonl" \
+   "$XDG_STATE_HOME/intent-solutions/agents/bob/eino-go/evidence.jsonl"` must be empty
+   (the copy is byte-identical by design).
+3. Only then: `rm -r "$XDG_STATE_HOME/iam-bob-eino/"` (default
+   `~/.local/state/iam-bob-eino/`).
+
+Do NOT remove the legacy directory if step 2 reported a broken chain — in that case the
+legacy file was deliberately not copied and is your only forensic record.
+
 ## Receipt / evidence compatibility
 
 - Evidence records now include `agent_identity` (structured identity, evidence schema v2,

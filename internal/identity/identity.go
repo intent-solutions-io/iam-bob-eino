@@ -208,7 +208,7 @@ func (a AgentIdentity) Display() string {
 // service.name is the component id, never the bare persona, so multiple Bob
 // runtimes can never collapse into one "bob" service.
 func (a AgentIdentity) ResourceAttributes() map[string]string {
-	return map[string]string{
+	m := map[string]string{
 		"service.namespace":       "intent-solutions",
 		"service.name":            a.ComponentID,
 		"service.version":         a.Version,
@@ -221,6 +221,12 @@ func (a AgentIdentity) ResourceAttributes() map[string]string {
 		"intent.agent.role_id":    a.RoleID,
 		"intent.agent.schema":     a.SchemaVersion,
 	}
+	// A run-bound identity (WithRun) also names its run so per-operation
+	// telemetry can correlate with receipts and evidence.
+	if a.RunID != "" {
+		m["intent.agent.run_id"] = a.RunID
+	}
+	return m
 }
 
 // FamilyMember describes one repo/system in the Bob family for collision

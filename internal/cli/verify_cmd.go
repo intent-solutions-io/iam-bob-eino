@@ -60,9 +60,9 @@ func cmdVerify(args []string, stdout, stderr io.Writer) error {
 		proposedFiles = r.FilesChanged
 	}
 
-	evPath := filepath.Join(StateDir(), "evidence.jsonl")
-	if *evDir != "" {
-		evPath = filepath.Join(*evDir, "evidence.jsonl")
+	evPath, err := readEvidencePath(*evDir, stderr)
+	if err != nil {
+		return err
 	}
 	records, err := receipt.LoadEvidenceLog(evPath)
 	if err != nil {

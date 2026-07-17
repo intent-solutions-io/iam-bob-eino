@@ -56,8 +56,21 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
 
+  secrets:
+    name: gitleaks (secret scan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so leaked-then-removed secrets are still caught
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   # Future required gates (wired as their tooling lands; no-op until then):
   #   - golangci-lint (golangci/golangci-lint-action)
+  #   - markdownlint + license check
   #   - codecov threshold
   #   - @intentsolutions/audit-harness verify (7-layer taxonomy, curl-installed for Go)
-  #   - gosec / govulncheck security scan
+  #   - gosec security scan

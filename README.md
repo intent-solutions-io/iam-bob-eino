@@ -70,8 +70,10 @@ The agent acts **only through governed tools**:
 | `apply_patch` | R3 | `intent-bob-eino-patch/v1`: literal find/replace hunks with verified pre-hashes and exact occurrence counts; two-phase atomic with rollback |
 
 Every call — allowed, denied, executed, or failed — emits one content-safe evidence record
-(no secrets, no file contents; only hashes, workspace-relative paths, and short summaries) to an
-append-only, hash-chained log, shaped to project into Mission Control. During a `run`, actions
+**carrying the full structured agent identity** (`agent_identity`, schema
+`intent-agent-identity/v1`, bound inside the hash chain — tampering the identity breaks the
+chain) to an append-only log, shaped to project into Mission Control. Run receipts carry the
+same structured identity inside their sealed content hash. During a `run`, actions
 outside the plan escalate to a **PLAN VARIANCE** approval that `-yes` structurally refuses.
 
 ## Quick start — the lifecycle (BYOK, zero GCP)
