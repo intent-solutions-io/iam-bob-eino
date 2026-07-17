@@ -20,6 +20,10 @@ type Request struct {
 	Tool     string
 	Risk     policy.RiskClass
 	Summary  string
+	// Variance marks a PLAN VARIANCE: the action is outside the approved
+	// plan and requires a human decision. AutoApprove structurally refuses
+	// variance requests — --yes can never launder out-of-plan mutations.
+	Variance bool
 }
 
 // Decision records whether an action was approved and by what authority.
@@ -38,8 +42,13 @@ type Approver interface {
 // --yes runs where the operator has pre-authorized the session.
 type AutoApprove struct{}
 
-// Approve implements Approver by approving unconditionally.
+// Approve implements Approver by approving every IN-PLAN request. A variance
+// request is refused: pre-authorization (--yes) covers the approved plan, not
+// whatever the model decided to do instead — that always needs a human.
 func (AutoApprove) Approve(_ context.Context, req Request) Decision {
+	if req.Variance {
+		return Decision{Approved: false, Reason: "plan variance requires human approval; --yes cannot authorize out-of-plan actions"}
+	}
 	return Decision{Approved: true, ApprovalID: "auto:" + req.ActionID, Reason: "auto-approved"}
 }
 
@@ -59,8 +68,13 @@ type Prompt struct {
 	Out io.Writer
 }
 
-// Approve implements Approver by prompting and reading a yes/no answer.
+// Approve implements Approver by prompting and reading a yes/no answer. A
+// variance request is prefixed with a PLAN VARIANCE banner so the human knows
+// this specific action is outside the approved plan.
 func (p Prompt) Approve(_ context.Context, req Request) Decision {
+	if req.Variance {
+		fmt.Fprint(p.Out, "\nPLAN VARIANCE: the following action is NOT in the approved plan.")
+	}
 	fmt.Fprintf(p.Out, "\n[approval] %s risk=%s action=%s\n  %s\n  approve? [y/N]: ",
 		req.Tool, req.Risk, req.ActionID, req.Summary)
 	reader := bufio.NewReader(p.In)

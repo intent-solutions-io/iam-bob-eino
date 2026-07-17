@@ -32,15 +32,15 @@ func newApplyPatch(g *governor.Governor) (tool.InvokableTool, error) {
 			// Asset/Summary identify the exact change surface so the approval
 			// is over specific files, not a blank patch.
 			asset := "(malformed patch)"
+			var paths []string
 			if perr == nil {
-				paths := make([]string, 0, len(p.Files))
 				for _, fc := range p.Files {
 					paths = append(paths, fc.Path)
 				}
 				asset = strings.Join(paths, ",")
 			}
 			spec := governor.ActionSpec{
-				Tool: "apply_patch", Risk: policy.R3, Asset: asset,
+				Tool: "apply_patch", Risk: policy.R3, Asset: asset, Assets: paths,
 				Summary: fmt.Sprintf("apply patch to [%s] (%d bytes of patch)", asset, len(in.PatchJSON)),
 				RawArgs: jsonOf(in),
 			}
