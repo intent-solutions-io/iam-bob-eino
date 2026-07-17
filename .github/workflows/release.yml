@@ -1,0 +1,95 @@
+name: release
+
+# Tag-triggered release: full quality gates, then GoReleaser artifacts with
+# checksums + SBOMs, then archive-content validation. The live MiniMax proof
+# is an OPERATOR-controlled gate run before tagging (000-docs/012) — no
+# provider credential exists in Actions and no paid call ever runs here.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  gates:
+    name: release gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          check-latest: true
+      - name: gofmt check
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then echo "unformatted files:"; echo "$out"; exit 1; fi
+      - name: go vet
+        run: go vet ./...
+      - name: build
+        run: go build ./...
+      - name: test
+        run: go test ./...
+      - name: test (race)
+        run: go test -race ./...
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+      - name: gitleaks (secret scan)
+        run: |
+          go install github.com/zricethezav/gitleaks/v8@latest
+          "$(go env GOPATH)/bin/gitleaks" detect --source . --no-banner --redact
+      - name: goreleaser config validation
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: check
+
+  release:
+    name: build · checksum · sbom · publish
+    needs: gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          check-latest: true
+      - name: install syft (SBOM generator)
+        uses: anchore/sbom-action/download-syft@v0
+      - name: goreleaser release
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: validate archive contents and checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          test -f intent-bob-eino_*_checksums.txt
+          sha256sum -c intent-bob-eino_*_checksums.txt
+          for a in intent-bob-eino_*.tar.gz; do
+            echo "== $a"
+            listing=$(tar -tzf "$a")
+            for want in bob-eino bob LICENSE NOTICE README.md INSTALL.md; do
+              echo "$listing" | grep -qx ".*$want" || { echo "MISSING $want in $a"; exit 1; }
+            done
+            echo "$listing" | grep -q "schemas/intent-agent-identity.v1.schema.json" \
+              || { echo "MISSING identity schema in $a"; exit 1; }
+          done
+          ls intent-bob-eino_*.sbom.spdx.json >/dev/null || { echo "MISSING SBOMs"; exit 1; }
+          echo "all archives validated"
+      - name: upload dist for audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/*

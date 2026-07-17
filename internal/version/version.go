@@ -26,9 +26,6 @@ const (
 	// Runtime is the implementation technology of this repo.
 	Runtime = "eino-go"
 
-	// AgentVersion is this application's semantic version.
-	AgentVersion = "0.1.0"
-
 	// Engine identifies the agent machinery Bob is built on.
 	Engine = "cloudwego/eino"
 
@@ -46,10 +43,17 @@ const (
 )
 
 // Build metadata injected at link time via -ldflags -X (see the Makefile's
-// build target). These are vars, not consts, precisely so the linker can set
-// them; a plain `go build` leaves the honest default "unknown" rather than a
-// fabricated commit.
+// build target and .goreleaser.yaml). These are vars, not consts, precisely
+// so the linker can set them; a plain `go build` leaves the honest defaults
+// rather than a fabricated commit or release version.
 var (
+	// AgentVersion is this application's semantic version. Development
+	// builds carry the base version; release builds inject the tag version
+	// (e.g. "0.1.0-rc.1") via GoReleaser. It is Bob's OWN version — never
+	// the Eino engine version and never a git SHA (BuildCommit holds that,
+	// separately).
+	AgentVersion = "0.1.0"
+
 	// BuildCommit is the git commit the binary was built from.
 	BuildCommit = "unknown"
 	// BuildDate is the commit date (ISO 8601) of BuildCommit — the commit

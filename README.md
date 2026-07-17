@@ -97,6 +97,22 @@ and migration guidance:
 [`000-docs/009-DR-GUID-cli-subcommands-and-migration.md`](000-docs/009-DR-GUID-cli-subcommands-and-migration.md).
 `make build-legacy` builds the deprecated `bob` alias (same implementation, one stderr warning).
 
+## Install from a release
+
+Release archives (`intent-bob-eino_<version>_<os>_<arch>.tar.gz` — linux/amd64, linux/arm64,
+darwin/amd64, darwin/arm64; no Windows claim) ship with SHA-256 checksums and per-archive SPDX
+SBOMs. Install with checksum verification — never `curl | bash`:
+
+```bash
+scripts/install.sh install --archive intent-bob-eino_<v>_<os>_<arch>.tar.gz \
+                           --checksums intent-bob-eino_<v>_checksums.txt
+```
+
+Upgrade / rollback / uninstall (binaries only — state is never touched):
+[`000-docs/011-DR-GUID-install-upgrade-rollback.md`](000-docs/011-DR-GUID-install-upgrade-rollback.md).
+Release process + gates: [`000-docs/010-DR-GUID-release-process.md`](000-docs/010-DR-GUID-release-process.md).
+The live MiniMax proof gating each release: [`000-docs/012-DR-GUID-live-minimax-proof.md`](000-docs/012-DR-GUID-live-minimax-proof.md).
+
 Evidence is written OUTSIDE the workspace to
 `$XDG_STATE_HOME/intent-solutions/agents/bob/eino-go/evidence.jsonl` (default
 `~/.local/state/...`), so the audited agent cannot reach its own audit trail;
