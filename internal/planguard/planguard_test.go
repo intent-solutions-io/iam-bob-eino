@@ -77,7 +77,12 @@ func TestMultiAssetPatchJudgedPerPath(t *testing.T) {
 
 func TestBackstopDenialsNeverOfferApproval(t *testing.T) {
 	g := New(testPlan(), steadyHead, nil)
-	for _, bad := range []string{".git/config", "../outside.txt", ".env", "server.pem", "/abs/path"} {
+	for _, bad := range []string{
+		".git/config", "../outside.txt", ".env", "server.pem", "/abs/path",
+		// The backstop must be at least as strict as plan.checkProposedFile.
+		".envrc", ".pypirc", "id_dsa", "id_ecdsa.pub", "secrets.yaml", "secrets.json",
+		"cert.pfx", "keystore.p12", "trust.jks",
+	} {
 		if d := g.Check(spec(policy.R3, bad)); d.Outcome != governor.GuardDenied {
 			t.Errorf("path %q: %v, want denied (never a variance prompt)", bad, d.Outcome)
 		}

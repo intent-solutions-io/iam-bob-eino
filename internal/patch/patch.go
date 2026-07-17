@@ -190,11 +190,22 @@ func checkPath(p string) error {
 		}
 	}
 	base := strings.ToLower(norm[strings.LastIndex(norm, "/")+1:])
-	if secretBase[base] || strings.HasPrefix(base, ".env.") ||
-		strings.HasSuffix(base, ".pem") || strings.HasSuffix(base, ".key") {
+	if secretBase[base] || strings.HasPrefix(base, ".env.") || secretExtension(base) {
 		return fmt.Errorf("%w: secret-material file %q", ErrForbiddenPath, p)
 	}
 	return nil
+}
+
+// secretExtension matches key-material file extensions — kept aligned with
+// internal/plan's secretExtensions set so a patch can never target what a
+// plan may never propose.
+func secretExtension(base string) bool {
+	for _, ext := range []string{".pem", ".key", ".pfx", ".p12", ".jks"} {
+		if strings.HasSuffix(base, ext) {
+			return true
+		}
+	}
+	return false
 }
 
 func isHex(s string) bool {

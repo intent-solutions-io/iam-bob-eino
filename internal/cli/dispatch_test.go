@@ -42,6 +42,20 @@ func TestNoArgsPrintsUsageAndFails(t *testing.T) {
 	}
 }
 
+// TestSubcommandDashHExitsZero: -h on a subcommand prints usage to stderr
+// and is a successful help request, never exit 1.
+func TestSubcommandDashHExitsZero(t *testing.T) {
+	for _, cmd := range []string{"version", "doctor", "plan", "run", "verify"} {
+		var stdout, stderr bytes.Buffer
+		if code := Run([]string{cmd, "-h"}, strings.NewReader(""), &stdout, &stderr); code != 0 {
+			t.Errorf("%s -h exit = %d, want 0\nstderr:\n%s", cmd, code, stderr.String())
+		}
+		if strings.Contains(stderr.String(), "error:") {
+			t.Errorf("%s -h must not print an error line:\n%s", cmd, stderr.String())
+		}
+	}
+}
+
 func TestHelpGoesToStdoutAndSucceeds(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	if code := Run([]string{"help"}, strings.NewReader(""), &stdout, &stderr); code != 0 {

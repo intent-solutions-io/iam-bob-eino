@@ -13,6 +13,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -49,6 +50,11 @@ func (e exitCodeError) Error() string { return fmt.Sprintf("exit status %d", int
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	err := dispatch(args, stdin, stdout, stderr)
 	if err == nil {
+		return 0
+	}
+	// -h/-help on any FlagSet: usage already went to stderr; that is a
+	// successful help request, not a failure.
+	if errors.Is(err, flag.ErrHelp) {
 		return 0
 	}
 	var code exitCodeError

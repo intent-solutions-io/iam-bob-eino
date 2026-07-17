@@ -215,6 +215,7 @@ func TestForbiddenPaths(t *testing.T) {
 	for _, bad := range []string{
 		"../escape.txt", "/etc/passwd", ".git/config", "sub/.git/hooks/pre-commit",
 		".env", ".env.local", "server.pem", "signing.key", "~/x.txt",
+		"cert.pfx", "keystore.p12", "trust.jks",
 	} {
 		p := onePatch(bad, "x", "x", "y")
 		if err := Validate(p); !errors.Is(err, ErrForbiddenPath) {

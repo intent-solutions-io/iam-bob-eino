@@ -138,6 +138,19 @@ func (g *Guard) paths(spec governor.ActionSpec) []string {
 	return []string{spec.Asset}
 }
 
+// secretBaseNames and secretExtensions mirror internal/plan's forbidden
+// proposed-file sets: the variance guard's backstop must be at least as
+// strict as what a plan may propose, or an approval prompt could be offered
+// for a file the planner itself may never name.
+var secretBaseNames = map[string]bool{
+	".env": true, ".envrc": true, ".netrc": true, ".npmrc": true, ".pypirc": true,
+	"credentials": true, "secrets.yaml": true, "secrets.yml": true, "secrets.json": true,
+}
+
+var secretExtensions = []string{".pem", ".key", ".pfx", ".p12", ".jks"}
+
+var secretPrefixes = []string{".env.", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"}
+
 // forbiddenWrite reports why a write path may never be approved, or "".
 func forbiddenWrite(p string) string {
 	norm := filepath.ToSlash(filepath.Clean(p))
@@ -148,10 +161,18 @@ func forbiddenWrite(p string) string {
 		return "git internals are never writable: " + p
 	}
 	base := strings.ToLower(norm[strings.LastIndex(norm, "/")+1:])
-	if base == ".env" || strings.HasPrefix(base, ".env.") || base == ".netrc" || base == ".npmrc" ||
-		base == "credentials" || strings.HasSuffix(base, ".pem") || strings.HasSuffix(base, ".key") ||
-		strings.HasPrefix(base, "id_rsa") || strings.HasPrefix(base, "id_ed25519") {
+	if secretBaseNames[base] {
 		return "secret material is never writable: " + p
+	}
+	for _, prefix := range secretPrefixes {
+		if strings.HasPrefix(base, prefix) {
+			return "secret material is never writable: " + p
+		}
+	}
+	for _, ext := range secretExtensions {
+		if strings.HasSuffix(base, ext) {
+			return "secret material is never writable: " + p
+		}
 	}
 	return ""
 }
