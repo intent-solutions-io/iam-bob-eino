@@ -2,138 +2,88 @@
 // cmd/bob-eino (canonical) and cmd/bob (legacy compatibility alias). Keeping
 // the whole surface here guarantees the two binaries cannot drift — the alias
 // is one deprecation line plus a call into the same Run.
+//
+// The surface is subcommand-shaped (version | doctor | plan | run | verify |
+// evidence). The original flat one-shot form ("bob-eino [flags] <task>") is
+// kept as a deprecated implicit fallback; "bob-eino -- <task>" forces the
+// flat form when a task happens to start with a command word.
 package cli
 
 import (
 	"bufio"
-	"context"
 	"encoding/json"
-	"flag"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/intent-solutions-io/iam-bob-eino/internal/agent"
-	"github.com/intent-solutions-io/iam-bob-eino/internal/approval"
 	"github.com/intent-solutions-io/iam-bob-eino/internal/evidence"
-	"github.com/intent-solutions-io/iam-bob-eino/internal/governor"
-	"github.com/intent-solutions-io/iam-bob-eino/internal/identity"
-	"github.com/intent-solutions-io/iam-bob-eino/internal/policy"
-	"github.com/intent-solutions-io/iam-bob-eino/internal/provider"
-	"github.com/intent-solutions-io/iam-bob-eino/internal/tools"
-	"github.com/intent-solutions-io/iam-bob-eino/internal/version"
-	"github.com/intent-solutions-io/iam-bob-eino/internal/workspace"
 )
+
+const usageText = `usage: bob-eino <command> [flags]
+
+commands:
+  version    print identity, build, and schema versions
+  doctor     run preflight environment and configuration checks
+  plan       produce a hashed, read-only plan artifact for a task
+  run        execute a previously saved plan under governance
+  verify     re-verify a sealed run receipt against recorded evidence
+  evidence   list, show, and chain-verify the local evidence log
+
+one-shot (deprecated): bob-eino [flags] <task>
+  use 'bob-eino -- <task>' when the task starts with a command word
+  use 'bob-eino <command> -h' for command flags`
+
+// exitCodeError carries a non-zero exit code out of a command that already
+// printed its own diagnostics; Run maps it to the code without adding an
+// "error:" line.
+type exitCodeError int
+
+func (e exitCodeError) Error() string { return fmt.Sprintf("exit status %d", int(e)) }
 
 // Run executes one CLI invocation with the given argument list (excluding the
 // program name) and returns the process exit code. Both entry points call it;
 // nothing else may implement CLI behavior.
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	if err := run(args, stdin, stdout, stderr); err != nil {
-		fmt.Fprintln(stderr, "error:", err)
-		return 1
+	err := dispatch(args, stdin, stdout, stderr)
+	if err == nil {
+		return 0
 	}
-	return 0
+	var code exitCodeError
+	if errors.As(err, &code) {
+		return int(code)
+	}
+	fmt.Fprintln(stderr, "error:", err)
+	return 1
 }
 
-func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
-	fs := flag.NewFlagSet("bob-eino", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	var (
-		wsPath     = fs.String("workspace", ".", "workspace root directory Bob may operate in")
-		modelSel   = fs.String("model", "", "model selector provider/model (default from $INTENT_BOB_EINO_MODEL, legacy $BOB_MODEL, or deepseek/deepseek-chat)")
-		allowWrite = fs.Bool("allow-writes", false, "enable file writes (still requires approval)")
-		autoYes    = fs.Bool("yes", false, "auto-approve actions that require approval (non-interactive)")
-		evPath     = fs.String("evidence", "", "evidence log path (default <state-dir>/evidence.jsonl outside the workspace)")
-		showVer    = fs.Bool("version", false, "print version and exit")
-	)
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
-	if *showVer {
-		id, err := identity.New(identity.RoleCoding, "local", version.AgentVersion)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintln(stdout, id.Display())
-		fmt.Fprintf(stdout, "  engine:    %s %s\n", version.Engine, version.EngineVersion)
-		return nil
-	}
-
-	task := strings.TrimSpace(strings.Join(fs.Args(), " "))
-	if task == "" {
-		return fmt.Errorf("usage: bob-eino [flags] <task>\n(use -h for flags)")
-	}
-
-	ctx := context.Background()
-
-	ws, err := workspace.New(*wsPath)
-	if err != nil {
-		return err
-	}
-
-	// Evidence sink lives OUTSIDE the workspace so the agent being audited
-	// cannot read, rewrite, or delete its own audit trail through its tools.
-	evidencePath := *evPath
-	if evidencePath == "" {
-		evidencePath, err = ResolveEvidencePath(stderr)
-		if err != nil {
-			return err
+// dispatch routes to a subcommand, or falls through to the deprecated flat
+// one-shot form. "--" as the first argument forces the flat form.
+func dispatch(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	if len(args) > 0 {
+		switch args[0] {
+		case "version":
+			return cmdVersion(args[1:], stdout, stderr)
+		case "doctor":
+			return cmdDoctor(args[1:], stdout, stderr)
+		case "plan":
+			return cmdPlan(args[1:], stdin, stdout, stderr)
+		case "run":
+			return cmdRun(args[1:], stdin, stdout, stderr)
+		case "verify":
+			return cmdVerify(args[1:], stdout, stderr)
+		case "evidence":
+			return cmdEvidence(args[1:], stdout, stderr)
+		case "help", "-help", "--help", "-h":
+			fmt.Fprintln(stdout, usageText)
+			return nil
+		case "--":
+			return runFlat(args[1:], stdin, stdout, stderr)
 		}
 	}
-	if err := os.MkdirAll(filepath.Dir(evidencePath), 0o755); err != nil {
-		return fmt.Errorf("create evidence dir: %w", err)
-	}
-	sink, err := evidence.NewJSONLSink(evidencePath)
-	if err != nil {
-		return err
-	}
-	defer sink.Close()
-
-	pol := policy.Default()
-	pol.AllowWrites = *allowWrite
-
-	var approver approval.Approver
-	if *autoYes {
-		approver = approval.AutoApprove{}
-	} else {
-		approver = approval.Prompt{In: stdin, Out: stderr}
-	}
-
-	gov := governor.New(ws, pol, approver, sink)
-
-	toolset, err := tools.All(gov)
-	if err != nil {
-		return err
-	}
-
-	cfg, err := provider.Resolve(*modelSel)
-	if err != nil {
-		return err
-	}
-	model, err := provider.New(ctx, cfg)
-	if err != nil {
-		return err
-	}
-
-	ag, err := agent.New(ctx, agent.Config{Model: model, Tools: toolset})
-	if err != nil {
-		return err
-	}
-
-	fmt.Fprintf(stderr, "%s: workspace=%s model=%s/%s writes=%v evidence=%s\n",
-		version.Component, ws.Root(), cfg.Provider, cfg.Model, pol.AllowWrites, evidencePath)
-
-	answer, err := agent.Run(ctx, ag, task, stderr)
-	if err != nil {
-		return err
-	}
-
-	fmt.Fprintln(stdout, strings.TrimSpace(answer))
-	return nil
+	return runFlat(args, stdin, stdout, stderr)
 }
 
 // StateDir returns the canonical per-user state directory, OUTSIDE any
@@ -145,6 +95,14 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 func StateDir() string {
 	return filepath.Join(stateBase(), "intent-solutions", "agents", "bob", "eino-go")
 }
+
+// PlansDir is where sealed plan artifacts are saved — inside the state dir,
+// outside every workspace, so a plan can never be edited by the workspace it
+// governs.
+func PlansDir() string { return filepath.Join(StateDir(), "plans") }
+
+// ReceiptsDir is where sealed run receipts are saved, same containment rule.
+func ReceiptsDir() string { return filepath.Join(StateDir(), "receipts") }
 
 // LegacyStateDir returns the pre-contract state directory ("iam-bob-eino/").
 // It is still discovered for reads and never destructively migrated.

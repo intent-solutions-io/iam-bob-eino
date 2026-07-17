@@ -568,15 +568,30 @@ func TestEvidenceDirSymlinkIntoWorkspaceRejected(t *testing.T) {
 	}
 }
 
+// TestDefaultProviderModelSeeded: with no source setting provider/model, the
+// merge seeds the documented operational default at the lowest tier.
+func TestDefaultProviderModelSeeded(t *testing.T) {
+	t.Parallel()
+	cfg, err := Load(Options{Getenv: envOf(nil), HomeDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("Load with defaults: %v", err)
+	}
+	if cfg.Provider != DefaultProvider || cfg.Model != DefaultModelID {
+		t.Errorf("defaults = %s/%s, want %s/%s", cfg.Provider, cfg.Model, DefaultProvider, DefaultModelID)
+	}
+}
+
+// TestMissingProviderModel: the defaults can still be explicitly blanked by a
+// higher-precedence source, and that remains a typed validation error.
 func TestMissingProviderModel(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name string
 		cli  Overrides
 	}{
-		{"both missing", Overrides{}},
-		{"model missing", Overrides{Provider: strPtr("openai")}},
-		{"provider missing", Overrides{Model: strPtr("gpt-4o-mini")}},
+		{"provider blanked", Overrides{Provider: strPtr("")}},
+		{"model blanked", Overrides{Model: strPtr("")}},
+		{"both blanked", Overrides{Provider: strPtr(""), Model: strPtr("")}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

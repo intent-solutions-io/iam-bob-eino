@@ -140,6 +140,49 @@ func Resolve(selector string) (Config, error) {
 	return Config{Provider: providerName, Model: modelID, APIKey: apiKey, BaseURL: entry.baseURL}, nil
 }
 
+// KeyEnv returns the environment variable holding the API key for a registry
+// provider ("" for providers that need no key, e.g. ollama) and whether the
+// provider is known. Doctor uses it for a boolean credential-presence check;
+// the key VALUE never flows through this package's exported surface.
+func KeyEnv(providerName string) (envVar string, known bool) {
+	entry, ok := Registry[strings.ToLower(providerName)]
+	if !ok {
+		return "", false
+	}
+	return entry.keyEnv, true
+}
+
+// FromConfig builds a resolved Config from already-merged configuration
+// values (the subcommand path — internal/config owns the precedence merge).
+// Resolve remains the selector-string path used only by the flat one-shot
+// form. An empty modelID takes the provider's registry default; a non-empty
+// baseURL overrides the registry endpoint.
+func FromConfig(providerName, modelID, baseURL string) (Config, error) {
+	providerName = strings.ToLower(providerName)
+	if providerName == "google" || providerName == "gemini" || providerName == "vertex" {
+		return Config{}, fmt.Errorf("provider %q is not supported: Bob is zero-Google by default", providerName)
+	}
+	entry, known := Registry[providerName]
+	if !known {
+		return Config{}, fmt.Errorf("unknown provider %q (known: %s)", providerName, knownProviders())
+	}
+	if modelID == "" {
+		modelID = entry.model
+	}
+	var apiKey string
+	if entry.needsAuth {
+		apiKey = os.Getenv(entry.keyEnv)
+		if apiKey == "" {
+			return Config{}, fmt.Errorf("provider %q requires %s to be set (BYOK)", providerName, entry.keyEnv)
+		}
+	}
+	base := entry.baseURL
+	if baseURL != "" {
+		base = baseURL
+	}
+	return Config{Provider: providerName, Model: modelID, APIKey: apiKey, BaseURL: base}, nil
+}
+
 // New constructs an OpenAI-compatible chat model from a resolved Config.
 func New(ctx context.Context, cfg Config) (model.ToolCallingChatModel, error) {
 	cm, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{

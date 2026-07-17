@@ -159,8 +159,13 @@ func fieldErr(field string, sentinel error, detail string) error {
 	return &FieldError{Field: field, Detail: detail, Err: sentinel}
 }
 
-// Safe defaults.
+// Safe defaults. DefaultProvider/DefaultModelID seed the lowest-precedence
+// tier of the merge and MUST equal the split of provider.DefaultModel
+// ("minimax/MiniMax-M3") — asserted by a CLI-layer test so the two packages
+// cannot drift (config deliberately does not import provider).
 const (
+	DefaultProvider     = "minimax"
+	DefaultModelID      = "MiniMax-M3"
 	DefaultMaxSteps     = 32
 	DefaultTimeout      = 2 * time.Minute
 	DefaultApprovalMode = "prompt"
@@ -249,6 +254,8 @@ func Load(opts Options) (Config, error) {
 	env := newEnvReader(getenv, opts.Warn)
 
 	cfg := Config{
+		Provider:     DefaultProvider,
+		Model:        DefaultModelID,
 		MaxSteps:     DefaultMaxSteps,
 		Timeout:      DefaultTimeout,
 		ApprovalMode: DefaultApprovalMode,
