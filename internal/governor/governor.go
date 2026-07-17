@@ -14,6 +14,7 @@ import (
 	"github.com/intent-solutions-io/iam-bob-eino/internal/approval"
 	"github.com/intent-solutions-io/iam-bob-eino/internal/evidence"
 	"github.com/intent-solutions-io/iam-bob-eino/internal/identity"
+	"github.com/intent-solutions-io/iam-bob-eino/internal/limits"
 	"github.com/intent-solutions-io/iam-bob-eino/internal/policy"
 	"github.com/intent-solutions-io/iam-bob-eino/internal/seams"
 	"github.com/intent-solutions-io/iam-bob-eino/internal/verify"
@@ -55,7 +56,8 @@ type Governor struct {
 	Sink     evidence.Sink
 	Exec     seams.ExecutionSeam
 	Project  seams.EvidenceProjector
-	Guard    Guard // optional plan-variance hook; nil = no plan in force
+	Guard    Guard           // optional plan-variance hook; nil = no plan in force
+	Limits   *limits.Tracker // optional per-run usage bounds; nil = unbounded
 	Env      string
 	Corr     string // correlation id shared by all actions in one run
 
@@ -149,10 +151,20 @@ func (g *Governor) Begin(spec ActionSpec) *Ticket {
 	}
 }
 
-// Authorize runs the boundaries in fixed order: policy → guard (plan
-// variance) → approval → the AGP execution seam. It records the authorization
-// outcome on the ticket and returns whether the action may proceed.
+// Authorize runs the boundaries in fixed order: limits → policy → guard
+// (plan variance) → approval → the AGP execution seam. It records the
+// authorization outcome on the ticket and returns whether the action may
+// proceed.
 func (t *Ticket) Authorize(ctx context.Context, spec ActionSpec) Gate {
+	// Usage bounds first: an exhausted run refuses every further action (the
+	// denied evidence record is still emitted by the calling tool) and the
+	// tracker has already cancelled the run context with the typed cause.
+	if t.g.Limits != nil {
+		if lerr := t.g.Limits.OnBegin(spec.Tool, t.rec.ArgsHash); lerr != nil {
+			t.rec.Authorization = "denied"
+			return Gate{Allowed: false, Reason: lerr.Error()}
+		}
+	}
 	dec := t.g.Policy.Evaluate(spec.Risk)
 	if !dec.Allowed {
 		t.rec.Authorization = "denied"
@@ -265,6 +277,9 @@ func (t *Ticket) emit(ctx context.Context) {
 	t.emitted = true
 	_ = t.g.Sink.Write(t.rec)
 	_ = t.g.Project.Project(ctx, t.rec)
+	if t.g.Limits != nil {
+		t.g.Limits.OnFinish(t.rec.Execution)
+	}
 }
 
 // newID returns a short random hex identifier for actions and correlations. On
