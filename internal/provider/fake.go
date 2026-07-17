@@ -54,8 +54,13 @@ func (f *FakeChatModel) Generate(ctx context.Context, _ []*schema.Message, _ ...
 	} else {
 		msg = f.Script[turn]
 	}
-	if f.TurnUsage != nil && msg.ResponseMeta == nil {
-		msg.ResponseMeta = &schema.ResponseMeta{Usage: f.TurnUsage}
+	if f.TurnUsage != nil {
+		if msg.ResponseMeta == nil {
+			msg.ResponseMeta = &schema.ResponseMeta{}
+		}
+		if msg.ResponseMeta.Usage == nil {
+			msg.ResponseMeta.Usage = f.TurnUsage
+		}
 	}
 	return msg, nil
 }
