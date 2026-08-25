@@ -21,6 +21,8 @@ the rest of the Intent Solutions estate.
 It is **not** a new agent framework, a multi-agent swarm, an identity system, or a
 reimplementation of Eino / AGP / Mission Control / Big Brain. Those are consumed through seams.
 
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/U5S225PTME)
+
 ## Naming — persona vs machine identity
 
 **"Bob" is the human-facing persona, never a machine key.** Machine surfaces use the structured
