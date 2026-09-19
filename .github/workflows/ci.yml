@@ -45,6 +45,11 @@ jobs:
   vuln:
     name: govulncheck (L2 security)
     runs-on: ubuntu-latest
+    # setup-go v6 sets GOTOOLCHAIN=local. `govulncheck@latest` can require a
+    # newer Go than this module pins, so let the go command fetch the toolchain
+    # the tool itself needs (the behavior setup-go v5 gave implicitly).
+    env:
+      GOTOOLCHAIN: auto
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
