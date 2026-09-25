@@ -3,7 +3,7 @@ module github.com/intent-solutions-io/iam-bob-eino
 go 1.25
 
 require (
-	github.com/cloudwego/eino v0.9.12
+	github.com/cloudwego/eino v0.9.20
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.13
 )
 
