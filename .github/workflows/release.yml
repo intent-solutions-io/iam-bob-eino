@@ -38,11 +38,11 @@ jobs:
         run: go test -race ./...
       - name: govulncheck
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
           govulncheck ./...
       - name: gitleaks (secret scan)
         run: |
-          go install github.com/zricethezav/gitleaks/v8@latest
+          go install github.com/zricethezav/gitleaks/v8@v8.30.1
           "$(go env GOPATH)/bin/gitleaks" detect --source . --no-banner --redact
       - name: goreleaser config validation
         uses: goreleaser/goreleaser-action@v7
@@ -63,7 +63,7 @@ jobs:
           go-version: "1.25"
           check-latest: true
       - name: install syft (SBOM generator)
-        uses: anchore/sbom-action/download-syft@v0
+        uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
       - name: goreleaser release
         uses: goreleaser/goreleaser-action@v7
         with:
