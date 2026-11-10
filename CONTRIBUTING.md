@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Go 1.25+ (developed on 1.26).
+- Go 1.27.3 or newer, as required by `go.mod`. CI and release jobs read that same toolchain floor.
 - No network is required for the test suite; it uses a deterministic offline model stub.
 
 ## Build, test, run
